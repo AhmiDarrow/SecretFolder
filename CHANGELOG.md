@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Updater signing: rotate to Tauri 2.11-compatible rsign private key format (empty password) so CI release signing succeeds
 - GitHub Actions `TAURI_SIGNING_PRIVATE_KEY` secret re-seeded to match the new keypair
+- Updater `pubkey` in `tauri.conf.json` was accidentally **double-base64-encoded** (build failed with `Missing encoded key in public key`); now set to the raw minisign public key string from the keypair
 
 ### Security
 - Path boundary (`path_is_under`), Session zeroize on drop, unlock throttle on crypto failures, and password minimum length 12 remain in force (from 0.1.1 hardening)

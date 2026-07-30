@@ -28,7 +28,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "ZFc1MGNuVnpkR1ZrSUdOdmJXMWxiblE2SUcxcGJtbHphV2R1SUhCMVlteHBZeUJyWlhrNklEazJORGhETmpaRE1EZEdOVFV5UlVFS1VsZFVjVlYyVlVoaVRWcEpiRzVNU1RoVlVEQlNNREphTjBaNWR6WnNOMXBxUlVSSldDODFhazVSUzNScFpqZEVLMXBwTWpCMU9Ga0sK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk2NDhDNjZDMDdGNTUyRUEKUldUcVV2VUhiTVpJbG5MSThVUDBSMDJaN0Z5dzZsN1pqRURJWC81ak5RS3RpZjdEK1ppMjB1OFkK",
       "endpoints": [
         "https://github.com/AhmiDarrow/SecretFolder/releases/latest/download/latest.json"
       ],
