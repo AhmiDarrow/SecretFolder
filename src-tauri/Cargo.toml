@@ -1,6 +1,6 @@
 [package]
 name = "secretfolder"
-version = "0.1.1"
+version = "0.1.2"
 description = "Encrypted local file vault for Windows — folder feel, secrets safe at rest"
 authors = ["Ahmi Darrow"]
 edition = "2021"
