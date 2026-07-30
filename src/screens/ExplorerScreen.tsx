@@ -938,8 +938,8 @@ export function ExplorerScreen({ status, onLocked }: Props) {
 
   async function savePassword() {
     setSettingsMsg(null);
-    if (newPw.length < 8) {
-      setSettingsMsg("New password must be at least 8 characters.");
+    if (newPw.length < 12) {
+      setSettingsMsg("New password must be at least 12 characters.");
       return;
     }
     if (newPw !== newPw2) {

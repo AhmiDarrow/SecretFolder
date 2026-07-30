@@ -36,10 +36,14 @@ If you need air-gapped operation, do not use Check for updates / block the endpo
 - Strict CSP in the WebView
 - Least-privilege Tauri capabilities
 - Separate app identity from SecretSticky (data dir, identifier, AAD, icons, repo)
+- Master password minimum length: **12** characters
+- Unlock rate limit (sliding window + escalating cooldown); all auth/crypto failures count
+- Import/export paths restricted to user home / Desktop / Documents / Downloads / temp / vault root (component-boundary checks)
+- Session plaintext item cache cleared on lock; content-key material zeroized on drop
 
 ### Limits (v1)
 
-- Items are encrypted in memory (practical size cap ~25 MiB per item)
+- Items are encrypted in memory (practical size cap ~25 MiB per item)
 - Not a FUSE/driver mount — import/export and in-app preview only
 - Recovery key is shown once at setup; store it offline
 
@@ -64,3 +68,4 @@ If you need air-gapped operation, do not use Check for updates / block the endpo
 - Lock from the tray when leaving the desk
 - Keep Windows and WebView2 updated
 - Prefer official GitHub Release installers (signed updater path)
+

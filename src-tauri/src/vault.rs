@@ -17,6 +17,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use zeroize::Zeroize;
+
 use crate::crypto::{
     self, derive_key, generate_recovery_key, normalize_recovery_key, MasterKey, ARGON2_M_KIB,
     ARGON2_P, ARGON2_T, SALT_LEN,
@@ -27,6 +29,9 @@ const VAULT_VERSION: u32 = 1;
 const DEFAULT_IDLE_LOCK_SECS: u64 = 15 * 60;
 /// v1 hard cap — load-all-in-memory encrypt; no full video vault promise.
 pub const MAX_FILE_BYTES: u64 = 25 * 1024 * 1024; // 25 MiB
+/// Images larger than this are not rendered inline as base64 data URLs.
+/// User must export/open externally instead.
+const MAX_PREVIEW_SIZE: u64 = 5 * 1024 * 1024; // 5 MiB
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,12 +112,14 @@ struct VaultFile {
     items: Vec<EncIndexEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize)]
+#[zeroize(drop)]
 struct ItemPlain {
     id: String,
     name: String,
     mime: String,
     size: u64,
+    #[zeroize(skip)]
     kind: ItemKind,
     /// Parent folder id; None = vault root. Missing in older vaults = root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -129,7 +136,19 @@ struct Session {
     has_recovery_key: bool,
 }
 
+impl Drop for Session {
+    fn drop(&mut self) {
+        // Best-effort wipe of plaintext item cache on lock/drop.
+        for item in self.items.values_mut() {
+            item.zeroize();
+        }
+        self.items.clear();
+    }
+}
+
+
 pub struct Vault {
+    #[allow(dead_code)]
     root: PathBuf,
     index_path: PathBuf,
     blobs_dir: PathBuf,
@@ -231,9 +250,9 @@ impl Vault {
         if self.file.is_some() {
             return Err(AppError::AlreadyInitialized);
         }
-        if password.chars().count() < 8 {
+        if password.chars().count() < 12 {
             return Err(AppError::Message(
-                "password must be at least 8 characters".into(),
+                "password must be at least 12 characters".into(),
             ));
         }
 
@@ -389,14 +408,19 @@ impl Vault {
     }
 
     pub fn lock(&mut self) {
-        self.session = None;
+        // Drop session explicitly: clear plaintext item map first, then MasterKey
+        // zeroizes on drop via ZeroizeOnDrop.
+        if let Some(mut session) = self.session.take() {
+            session.items.clear();
+            drop(session);
+        }
     }
 
     pub fn change_password(&mut self, current: &str, new_password: &str) -> AppResult<()> {
         self.require_unlocked()?;
-        if new_password.chars().count() < 8 {
+        if new_password.chars().count() < 12 {
             return Err(AppError::Message(
-                "password must be at least 8 characters".into(),
+                "password must be at least 12 characters".into(),
             ));
         }
         // Verify current password against verifier without dropping session.
@@ -419,33 +443,39 @@ impl Vault {
                 .map_err(|_| AppError::BadPassword)?;
         }
 
-        let content_key_bytes = {
+        let mut content_key_bytes = {
             let s = self.session.as_ref().ok_or(AppError::Locked)?;
             *s.key.as_bytes()
         };
 
-        let file = self.file.as_mut().ok_or(AppError::NotInitialized)?;
-        let salt = B64
-            .decode(&file.header.salt_b64)
-            .map_err(|e| AppError::Crypto(format!("salt: {e}")))?;
-        let new_pw_key = derive_key(
-            new_password,
-            &salt,
-            file.header.argon2_m_kib,
-            file.header.argon2_t,
-            file.header.argon2_p,
-        )?;
-        let verifier = crypto::encrypt(&new_pw_key, b"secretfolder-ok", b"secretfolder-verifier")?;
-        let password_wrapped =
-            crypto::encrypt(&new_pw_key, &content_key_bytes, b"secretfolder-pw-wrap")?;
-        file.header.verifier_b64 = B64.encode(verifier);
-        file.header.password_wrapped_key_b64 = Some(B64.encode(password_wrapped));
-        // Recovery wrap stays the same (content key unchanged).
-        self.persist()?;
-        self.touch();
-        Ok(())
+        let result = (|| {
+            let file = self.file.as_mut().ok_or(AppError::NotInitialized)?;
+            let salt = B64
+                .decode(&file.header.salt_b64)
+                .map_err(|e| AppError::Crypto(format!("salt: {e}")))?;
+            let new_pw_key = derive_key(
+                new_password,
+                &salt,
+                file.header.argon2_m_kib,
+                file.header.argon2_t,
+                file.header.argon2_p,
+            )?;
+            let verifier =
+                crypto::encrypt(&new_pw_key, b"secretfolder-ok", b"secretfolder-verifier")?;
+            let password_wrapped =
+                crypto::encrypt(&new_pw_key, &content_key_bytes, b"secretfolder-pw-wrap")?;
+            file.header.verifier_b64 = B64.encode(verifier);
+            file.header.password_wrapped_key_b64 = Some(B64.encode(password_wrapped));
+            // Recovery wrap stays the same (content key unchanged).
+            self.persist()?;
+            self.touch();
+            Ok(())
+        })();
+        content_key_bytes.zeroize();
+        result
     }
 
+    #[allow(dead_code)]
     pub fn list_items(&mut self) -> AppResult<Vec<ItemPreview>> {
         self.list_items_in(None)
     }
@@ -511,14 +541,14 @@ impl Vault {
         let meta = s.items.get(id).ok_or(AppError::NotFound)?.clone();
         if meta.kind == ItemKind::Folder {
             return Ok(ItemDetail {
-                id: meta.id,
-                name: meta.name,
-                mime: meta.mime,
+                id: meta.id.clone(),
+                name: meta.name.clone(),
+                mime: meta.mime.clone(),
                 size: meta.size,
                 kind: meta.kind,
-                parent_id: meta.parent_id,
-                created_at: meta.created_at,
-                updated_at: meta.updated_at,
+                parent_id: meta.parent_id.clone(),
+                created_at: meta.created_at.clone(),
+                updated_at: meta.updated_at.clone(),
                 text: None,
                 data_url: None,
             });
@@ -532,22 +562,27 @@ impl Vault {
                 (Some(t), None)
             }
             ItemKind::Image => {
-                let b64 = B64.encode(&raw);
-                let url = format!("data:{};base64,{}", meta.mime, b64);
-                (None, Some(url))
+                if meta.size > MAX_PREVIEW_SIZE {
+                    // Too large for inline rendering — user must export
+                    (None, None)
+                } else {
+                    let b64 = B64.encode(&raw);
+                    let url = format!("data:{};base64,{}", meta.mime, b64);
+                    (None, Some(url))
+                }
             }
             ItemKind::Binary | ItemKind::Folder => (None, None),
         };
 
         Ok(ItemDetail {
-            id: meta.id,
-            name: meta.name,
-            mime: meta.mime,
+            id: meta.id.clone(),
+            name: meta.name.clone(),
+            mime: meta.mime.clone(),
             size: meta.size,
             kind: meta.kind,
-            parent_id: meta.parent_id,
-            created_at: meta.created_at,
-            updated_at: meta.updated_at,
+            parent_id: meta.parent_id.clone(),
+            created_at: meta.created_at.clone(),
+            updated_at: meta.updated_at.clone(),
             text,
             data_url,
         })
@@ -781,7 +816,7 @@ impl Vault {
             return Err(AppError::Message("cannot export a folder as bytes".into()));
         }
         let raw = self.read_blob(id, &s.key)?;
-        Ok((meta.name, raw))
+        Ok((meta.name.clone(), raw))
     }
 
     fn validate_parent(&self, parent_id: Option<String>) -> AppResult<Option<String>> {
@@ -906,7 +941,7 @@ fn collect_subtree_ids(items: &HashMap<String, ItemPlain>, root_id: &str) -> Vec
     out
 }
 
-fn default_vault_root() -> AppResult<PathBuf> {
+pub fn default_vault_root() -> AppResult<PathBuf> {
     let base = dirs::data_dir().ok_or_else(|| AppError::Io("no data dir".into()))?;
     // Separate from SecretSticky — never share vault/keys.
     Ok(base.join("com.ahmi.secretfolder"))
@@ -1005,6 +1040,7 @@ fn replace_file(from: &Path, to: &Path) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
     use tempfile::tempdir;
 
     fn test_vault() -> (tempfile::TempDir, Vault) {
@@ -1017,7 +1053,7 @@ mod tests {
     fn setup_unlock_crud_text() {
         let (_dir, mut v) = test_vault();
         assert!(!v.status().initialized);
-        let recovery = v.setup("password123").unwrap();
+        let recovery = v.setup("password1234").unwrap();
         assert!(!recovery.is_empty());
         assert!(v.status().unlocked);
 
@@ -1029,7 +1065,7 @@ mod tests {
         v.lock();
         assert!(!v.status().unlocked);
         assert!(v.unlock("wrong-password").is_err());
-        v.unlock("password123").unwrap();
+        v.unlock("password1234").unwrap();
 
         let got = v.get_item(&item.id).unwrap();
         assert_eq!(got.text.as_deref(), Some("hello vault"));
@@ -1047,7 +1083,7 @@ mod tests {
     #[test]
     fn locked_ops_fail() {
         let (_dir, mut v) = test_vault();
-        v.setup("password123").unwrap();
+        v.setup("password1234").unwrap();
         v.lock();
         assert!(v.list_items().is_err());
         assert!(v.create_text("a.txt", "", None).is_err());
@@ -1056,7 +1092,7 @@ mod tests {
     #[test]
     fn recovery_unlock_works() {
         let (_dir, mut v) = test_vault();
-        let recovery = v.setup("password123").unwrap();
+        let recovery = v.setup("password1234").unwrap();
         let item = v.create_text("s.txt", "secret-body", None).unwrap();
         v.lock();
         v.unlock_with_recovery(&recovery).unwrap();
@@ -1067,16 +1103,16 @@ mod tests {
     #[test]
     fn change_password_keeps_items_and_recovery() {
         let (_dir, mut v) = test_vault();
-        let recovery = v.setup("password123").unwrap();
+        let recovery = v.setup("password1234").unwrap();
         let item = v.create_text("keep.txt", "sk-keep-me", None).unwrap();
 
-        v.change_password("password123", "new-password-456")
+        v.change_password("password1234", "new-password-456")
             .unwrap();
         assert!(v.status().unlocked);
         assert!(v.status().has_recovery_key);
 
         v.lock();
-        assert!(v.unlock("password123").is_err());
+        assert!(v.unlock("password1234").is_err());
         v.unlock("new-password-456").unwrap();
         let got = v.get_item(&item.id).unwrap();
         assert_eq!(got.text.as_deref(), Some("sk-keep-me"));
@@ -1090,7 +1126,7 @@ mod tests {
     #[test]
     fn binary_import_export_roundtrip() {
         let (_dir, mut v) = test_vault();
-        v.setup("password123").unwrap();
+        v.setup("password1234").unwrap();
         let data = vec![0u8, 1, 2, 3, 255, 128];
         let item = v
             .import_bytes(
@@ -1109,7 +1145,7 @@ mod tests {
     #[test]
     fn image_classified() {
         let (_dir, mut v) = test_vault();
-        v.setup("password123").unwrap();
+        v.setup("password1234").unwrap();
         // minimal 1x1 png-ish bytes
         let data = vec![0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
         let item = v
@@ -1130,7 +1166,7 @@ mod tests {
         let root = dir.path().to_path_buf();
         {
             let mut v = Vault::open_path_for_test(root.clone()).unwrap();
-            v.setup("password123").unwrap();
+            v.setup("password1234").unwrap();
             v.create_text("super-secret-name.txt", "x", None).unwrap();
         }
         let index = fs::read_to_string(root.join("vault.json")).unwrap();
@@ -1143,12 +1179,12 @@ mod tests {
         let root = dir.path().to_path_buf();
         let id = {
             let mut v = Vault::open_path_for_test(root.clone()).unwrap();
-            v.setup("password123").unwrap();
+            v.setup("password1234").unwrap();
             let item = v.create_text("one.txt", "body-one", None).unwrap();
             item.id
         };
         let mut v2 = Vault::open_path_for_test(root).unwrap();
-        v2.unlock("password123").unwrap();
+        v2.unlock("password1234").unwrap();
         let got = v2.get_item(&id).unwrap();
         assert_eq!(got.text.as_deref(), Some("body-one"));
     }
@@ -1156,7 +1192,7 @@ mod tests {
     #[test]
     fn rejects_huge_file() {
         let (_dir, mut v) = test_vault();
-        v.setup("password123").unwrap();
+        v.setup("password1234").unwrap();
         let big = vec![0u8; (MAX_FILE_BYTES as usize) + 1];
         let err = v
             .import_bytes(
@@ -1172,7 +1208,7 @@ mod tests {
     #[test]
     fn folders_nest_list_and_delete() {
         let (_dir, mut v) = test_vault();
-        v.setup("password123").unwrap();
+        v.setup("password1234").unwrap();
         let folder = v.create_folder("Work", None).unwrap();
         assert_eq!(folder.kind, ItemKind::Folder);
         let nested = v.create_folder("Secrets", Some(folder.id.clone())).unwrap();
@@ -1236,5 +1272,374 @@ mod tests {
         assert!(sanitize_name("a/b").is_err());
         assert!(sanitize_name("").is_err());
         assert_eq!(sanitize_name(" ok.txt ").unwrap(), "ok.txt");
+    }
+
+    #[test]
+    fn large_image_skips_inline_data_url() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        // Just over the preview gate, well under MAX_FILE_BYTES.
+        let size = (MAX_PREVIEW_SIZE as usize) + 1;
+        let mut data = vec![0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+        data.resize(size, 0xAB);
+        let item = v
+            .import_bytes("huge.png".into(), "image/png".into(), data, None)
+            .unwrap();
+        assert_eq!(item.kind, ItemKind::Image);
+        let got = v.get_item(&item.id).unwrap();
+        assert!(
+            got.data_url.is_none(),
+            "images > MAX_PREVIEW_SIZE must not embed base64 data URLs"
+        );
+        // Export still works for oversized previews.
+        let (name, bytes) = v.export_bytes(&item.id).unwrap();
+        assert_eq!(name, "huge.png");
+        assert_eq!(bytes.len(), size);
+    }
+
+    #[test]
+    fn small_image_keeps_inline_data_url() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let data = vec![0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+        let item = v
+            .import_bytes("tiny.png".into(), "image/png".into(), data, None)
+            .unwrap();
+        let got = v.get_item(&item.id).unwrap();
+        assert!(got.data_url.as_ref().unwrap().starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn idle_lock_zero_means_disabled() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        v.set_idle_lock_secs(0).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert!(!v.check_idle_lock());
+        assert!(v.status().unlocked);
+    }
+
+    #[test]
+    fn idle_lock_triggers_after_timeout() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        v.set_idle_lock_secs(1).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert!(v.check_idle_lock());
+        assert!(!v.status().unlocked);
+    }
+
+    #[test]
+    fn short_password_rejected_on_setup() {
+        let (_dir, mut v) = test_vault();
+        let err = v.setup("short").unwrap_err();
+        assert!(format!("{err}").contains("at least 12"));
+    }
+
+    #[test]
+    fn wrong_recovery_key_fails() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        v.lock();
+        assert!(v
+            .unlock_with_recovery("0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000")
+            .is_err());
+    }
+
+    #[test]
+    fn rename_and_move_to_root() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let folder = v.create_folder("Box", None).unwrap();
+        let note = v
+            .create_text("old.txt", "body", Some(folder.id.clone()))
+            .unwrap();
+        let renamed = v.rename_item(&note.id, "new.txt").unwrap();
+        assert_eq!(renamed.name, "new.txt");
+        let moved = v.move_item(&note.id, None).unwrap();
+        assert!(moved.parent_id.is_none());
+        let root = v.list_items_in(None).unwrap();
+        assert!(root.iter().any(|i| i.id == note.id && i.name == "new.txt"));
+    }
+
+    #[test]
+    fn double_setup_fails() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        assert!(v.setup("other").is_err());
+    }
+
+    #[test]
+    fn guess_mime_common_extensions() {
+        assert_eq!(guess_mime("a.PNG"), "image/png");
+        assert_eq!(guess_mime("x.jpg"), "image/jpeg");
+        assert_eq!(guess_mime("doc.txt"), "text/plain");
+        assert_eq!(guess_mime("noext"), "application/octet-stream");
+    }
+
+    #[test]
+    fn sanitize_blocks_dot_dot_backslash_nul_and_long() {
+        assert!(sanitize_name(".").is_err());
+        assert!(sanitize_name("..").is_err());
+        assert!(sanitize_name("a\\b").is_err());
+        assert!(sanitize_name("a\0b").is_err());
+        assert!(sanitize_name(&"x".repeat(256)).is_err());
+        assert_eq!(sanitize_name("notes.md").unwrap(), "notes.md");
+    }
+
+    #[test]
+    fn classify_kind_by_mime_and_extension() {
+        assert_eq!(classify_kind("text/plain", "x"), ItemKind::Text);
+        assert_eq!(classify_kind("image/png", "x"), ItemKind::Image);
+        assert_eq!(
+            classify_kind("application/octet-stream", "a.md"),
+            ItemKind::Text
+        );
+        assert_eq!(
+            classify_kind("application/octet-stream", "a.png"),
+            ItemKind::Image
+        );
+        assert_eq!(
+            classify_kind("application/octet-stream", "a.bin"),
+            ItemKind::Binary
+        );
+        assert_eq!(classify_kind("application/json", "data"), ItemKind::Text);
+    }
+
+    #[test]
+    fn setup_rejects_short_password() {
+        let (_dir, mut v) = test_vault();
+        let err = v.setup("short").unwrap_err();
+        assert!(
+            err.to_string().contains("8")
+                || err.to_string().to_lowercase().contains("password")
+        );
+        assert!(!v.status().initialized);
+    }
+
+    #[test]
+    fn double_unlock_fails() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        assert!(matches!(
+            v.unlock("password1234"),
+            Err(AppError::AlreadyUnlocked)
+        ));
+    }
+
+    #[test]
+    fn bad_recovery_key_fails() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        v.lock();
+        assert!(v.unlock_with_recovery("not-a-real-key").is_err());
+        assert!(v
+            .unlock_with_recovery(
+                "0000000000000000000000000000000000000000000000000000000000000000"
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn change_password_rejects_wrong_current_and_short_new() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        assert!(v
+            .change_password("wrong-current", "new-password-456")
+            .is_err());
+        assert!(v.change_password("password1234", "short").is_err());
+        // original still works
+        v.lock();
+        v.unlock("password1234").unwrap();
+    }
+
+    #[test]
+    fn idle_lock_zero_never_auto_locks() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        v.set_idle_lock_secs(0).unwrap();
+        assert!(!v.check_idle_lock());
+        assert!(v.status().unlocked);
+    }
+
+    #[test]
+    fn idle_lock_triggers_after_elapsed() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        v.set_idle_lock_secs(1).unwrap();
+        if let Some(s) = v.session.as_mut() {
+            s.last_activity = Instant::now() - Duration::from_secs(5);
+        }
+        assert!(v.check_idle_lock());
+        assert!(!v.status().unlocked);
+    }
+
+    #[test]
+    fn get_missing_item_errors() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        assert!(matches!(
+            v.get_item("00000000-0000-0000-0000-000000000000"),
+            Err(AppError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn status_reports_counts_when_locked() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        v.create_text("a.txt", "x", None).unwrap();
+        v.create_folder("F", None).unwrap();
+        v.lock();
+        let s = v.status();
+        assert!(s.initialized);
+        assert!(!s.unlocked);
+        assert_eq!(s.item_count, 2);
+        assert!(s.has_recovery_key);
+    }
+
+    #[test]
+    fn default_vault_root_is_secretfolder_not_sticky() {
+        let root = default_vault_root().unwrap();
+        let s = root.to_string_lossy().to_lowercase();
+        assert!(
+            s.contains("secretfolder") || s.contains("com.ahmi.secretfolder"),
+            "unexpected root: {s}"
+        );
+        assert!(!s.contains("secretsticky"));
+    }
+
+    // ── Edge-case coverage ─────────────────────────────────────────────────
+
+    #[test]
+    fn export_bytes_on_folder_errors() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let folder = v.create_folder("MyFolder", None).unwrap();
+        let err = v.export_bytes(&folder.id).unwrap_err();
+        assert!(err.to_string().contains("folder"));
+    }
+
+    #[test]
+    fn update_text_on_binary_item_errors() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let item = v
+            .import_bytes("data.bin".into(), "application/octet-stream".into(), vec![1, 2, 3], None)
+            .unwrap();
+        let err = v.update_text(&item.id, None, "new body".into()).unwrap_err();
+        assert!(err.to_string().contains("not a text"));
+    }
+
+    #[test]
+    fn delete_nonexistent_item_errors() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let err = v.delete_item("00000000-0000-0000-0000-000000000000", false).unwrap_err();
+        assert!(matches!(err, AppError::NotFound));
+    }
+
+    #[test]
+    fn create_text_invalid_parent_errors() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        // A text item cannot serve as a parent.
+        let item = v.create_text("ref.txt", "x", None).unwrap();
+        let err = v.create_text("child.txt", "body", Some(item.id.clone())).unwrap_err();
+        assert!(err.to_string().contains("not a folder"));
+    }
+
+    #[test]
+    fn empty_body_update_text_works() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let item = v.create_text("emptyable.txt", "initial", None).unwrap();
+        v.update_text(&item.id, None, String::new()).unwrap();
+        let detail = v.get_item(&item.id).unwrap();
+        assert_eq!(detail.text.as_deref(), Some(""));
+        assert_eq!(detail.size, 0);
+    }
+
+    #[test]
+    fn cascade_delete_on_file_works() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let item = v.create_text("alone.txt", "body", None).unwrap();
+        // cascade=true on a file is a no-op but should succeed.
+        v.delete_item(&item.id, true).unwrap();
+        assert!(v.get_item(&item.id).is_err());
+    }
+
+    #[test]
+    fn import_bytes_at_max_boundary_works() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let data = vec![0xABu8; MAX_FILE_BYTES as usize];
+        let item = v
+            .import_bytes("maxfile.bin".into(), "application/octet-stream".into(), data, None)
+            .unwrap();
+        let (name, out) = v.export_bytes(&item.id).unwrap();
+        assert_eq!(name, "maxfile.bin");
+        assert_eq!(out.len(), MAX_FILE_BYTES as usize);
+        assert_eq!(out[0], 0xAB);
+        assert_eq!(out[out.len() - 1], 0xAB);
+    }
+
+    #[test]
+    fn sanitize_unicode_and_weird_names() {
+        // Valid: emoji, accented chars, spaces
+        let ok = sanitize_name(" résumé (2024).txt ").unwrap();
+        assert_eq!(ok, "résumé (2024).txt");
+        let ok = sanitize_name("📁 project").unwrap();
+        assert_eq!(ok, "📁 project");
+        let ok = sanitize_name("a_b-c.d").unwrap();
+        assert_eq!(ok, "a_b-c.d");
+        // Invalid
+        assert!(sanitize_name("/root").is_err());
+        assert!(sanitize_name(".").is_err());
+        assert!(sanitize_name("..").is_err());
+    }
+
+    #[test]
+    fn set_idle_lock_persists_across_reload() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        {
+            let mut v = Vault::open_path_for_test(root.clone()).unwrap();
+            v.setup("password1234").unwrap();
+            v.set_idle_lock_secs(120).unwrap();
+        }
+        {
+            let mut v = Vault::open_path_for_test(root).unwrap();
+            v.unlock("password1234").unwrap();
+            assert_eq!(v.status().idle_lock_secs, 120);
+        }
+    }
+
+    #[test]
+    fn move_to_nonexistent_parent_errors() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let item = v.create_text("move-me.txt", "body", None).unwrap();
+        let fake_id = "00000000-0000-0000-0000-000000000000";
+        let err = v.move_item(&item.id, Some(fake_id.into())).unwrap_err();
+        assert!(matches!(err, AppError::NotFound));
+    }
+
+    #[test]
+    fn create_folder_under_nonexistent_parent_fails() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let fake_id = "00000000-0000-0000-0000-000000000000";
+        let err = v.create_folder("Lost", Some(fake_id.into())).unwrap_err();
+        assert!(matches!(err, AppError::NotFound));
+    }
+
+    #[test]
+    fn status_reports_zero_items_in_empty_vault() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let s = v.status();
+        assert_eq!(s.item_count, 0);
     }
 }

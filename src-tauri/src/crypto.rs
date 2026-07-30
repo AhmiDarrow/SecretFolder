@@ -45,6 +45,7 @@ impl MasterKey {
     }
 }
 
+#[allow(dead_code)]
 pub fn random_bytes(len: usize) -> Vec<u8> {
     let mut buf = vec![0u8; len];
     rand::thread_rng().fill_bytes(&mut buf);
@@ -104,10 +105,12 @@ pub fn decrypt(key: &MasterKey, blob: &[u8], aad: &[u8]) -> AppResult<Vec<u8>> {
         .map_err(|_| AppError::BadPassword)
 }
 
+#[allow(dead_code)]
 pub fn b64_encode(data: &[u8]) -> String {
     B64.encode(data)
 }
 
+#[allow(dead_code)]
 pub fn b64_decode(data: &str) -> AppResult<Vec<u8>> {
     B64.decode(data)
         .map_err(|e| AppError::Crypto(format!("b64: {e}")))
@@ -167,5 +170,123 @@ mod tests {
         let a = derive_key("password123", &salt, 8 * 1024, 1, 1).unwrap();
         let b = derive_key("password123", &salt, 8 * 1024, 1, 1).unwrap();
         assert_eq!(a.as_bytes(), b.as_bytes());
+    }
+
+    #[test]
+    fn empty_plaintext_roundtrip() {
+        let key = MasterKey::from_bytes(random_array());
+        let blob = encrypt(&key, b"", b"empty-test").unwrap();
+        let out = decrypt(&key, &blob, b"empty-test").unwrap();
+        assert_eq!(out, b"");
+    }
+
+    #[test]
+    fn wrong_key_fails() {
+        let key_a = MasterKey::from_bytes(random_array());
+        let key_b = MasterKey::from_bytes(random_array());
+        let blob = encrypt(&key_a, b"sensitive-data", b"key-test").unwrap();
+        assert!(decrypt(&key_b, &blob, b"key-test").is_err());
+    }
+
+    #[test]
+    fn wrong_key_same_bytes_but_different_instance_fails() {
+        // Verify that a different key derivation produces different cipher state.
+        let bytes_a = random_array::<32>();
+        let bytes_b = random_array::<32>();
+        // ensure they differ
+        if bytes_a == bytes_b {
+            // incredibly unlikely (1/2^256), but skip to avoid flake
+            return;
+        }
+        let key_a = MasterKey::from_bytes(bytes_a);
+        let key_b = MasterKey::from_bytes(bytes_b);
+        let blob = encrypt(&key_a, b"hi", b"same-test").unwrap();
+        assert!(decrypt(&key_b, &blob, b"same-test").is_err());
+    }
+
+    #[test]
+    fn recovery_key_format() {
+        let k = generate_recovery_key();
+        // 32 bytes → 64 hex chars → 16 groups of 4, hyphen-separated, uppercase
+        let parts: Vec<&str> = k.split('-').collect();
+        assert_eq!(parts.len(), 16, "expected 16 groups, got {k}");
+        for part in &parts {
+            assert_eq!(part.len(), 4);
+            assert!(part.chars().all(|c| c.is_ascii_hexdigit()));
+            assert_eq!(*part, part.to_uppercase());
+        }
+        let norm = normalize_recovery_key(&k);
+        assert_eq!(norm.len(), 64);
+        assert!(!norm.contains('-'));
+        assert_eq!(norm, normalize_recovery_key(&k));
+        // Mixed case / spaces still normalize
+        let messy = format!("  {}  ", k.to_lowercase());
+        assert_eq!(normalize_recovery_key(&messy), norm);
+    }
+
+    #[test]
+    fn decrypt_rejects_short_blob() {
+        let key = MasterKey::from_bytes(random_array());
+        assert!(decrypt(&key, b"short", b"aad").is_err());
+        assert!(decrypt(&key, &vec![0u8; NONCE_LEN + 15], b"aad").is_err());
+    }
+
+    #[test]
+    fn master_key_from_slice_rejects_bad_len() {
+        assert!(MasterKey::from_slice(&[0u8; 16]).is_err());
+        assert!(MasterKey::from_slice(&[0u8; 32]).is_ok());
+    }
+
+    #[test]
+    fn large_plaintext_roundtrip() {
+        let key = MasterKey::from_bytes(random_array());
+        let pt = vec![0xABu8; 100_000]; // 100 KB
+        let blob = encrypt(&key, &pt, b"large-test").unwrap();
+        let out = decrypt(&key, &blob, b"large-test").unwrap();
+        assert_eq!(out.len(), 100_000);
+        assert_eq!(out, pt);
+        // Ciphertext should be longer (nonce + tag overhead)
+        assert!(blob.len() > pt.len());
+    }
+
+    #[test]
+    fn wrong_aad_on_large_blob() {
+        let key = MasterKey::from_bytes(random_array());
+        let pt = b"large enough to matter";
+        let blob = encrypt(&key, pt, b"correct-aad").unwrap();
+        assert!(decrypt(&key, &blob, b"wrong-aad").is_err());
+        assert!(decrypt(&key, &blob, b"correct-aad").is_ok());
+    }
+
+    #[test]
+    fn tampered_ciphertext_fails() {
+        let key = MasterKey::from_bytes(random_array());
+        let pt = b"don't touch me";
+        let mut blob = encrypt(&key, pt, b"tamper-test").unwrap();
+        // Flip a bit in the ciphertext body (past the nonce)
+        if blob.len() > 20 {
+            blob[15] ^= 0xFF;
+            assert!(decrypt(&key, &blob, b"tamper-test").is_err());
+
+            // Flip a bit in the poly1305 tag (last 16 bytes)
+            let tag_start = blob.len() - 16;
+            blob[tag_start] ^= 0x01;
+            assert!(decrypt(&key, &blob, b"tamper-test").is_err());
+        }
+    }
+
+    #[test]
+    fn normalized_recovery_invalid() {
+        // Too short
+        let n = "abc";
+        assert_eq!(normalize_recovery_key(n), "abc");
+
+        // Too long
+        let long = "a".repeat(100);
+        assert_eq!(normalize_recovery_key(&long), long);
+
+        // Already normalized (no hyphens, hex only)
+        let hex = "abcd1234efab5678";
+        assert_eq!(normalize_recovery_key(hex), "abcd1234efab5678");
     }
 }

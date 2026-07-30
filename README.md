@@ -68,7 +68,7 @@ npm run tauri:build    # release installers under src-tauri/target/release/bundl
 
 ## Quick start
 
-1. Launch SecretFolder → create a master password (8+ characters).
+1. Launch SecretFolder → create a master password (12+ characters).
 2. **Save the recovery key offline** (shown once). Lost password + lost recovery = permanent data loss.
 3. Create folders, drop files in, or **New text**. Edit, preview images, export when needed.
 4. Close the window with **X** → app stays in the tray. Tray → **Quit** to exit fully.

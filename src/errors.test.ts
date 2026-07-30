@@ -24,4 +24,20 @@ describe("formatError", () => {
     expect(formatError({})).not.toBe("[object Object]");
     expect(formatError(null)).toBe("Something went wrong.");
   });
+
+  it("handles empty string and nested empty payload", () => {
+    expect(formatError("   ")).toBe("Something went wrong.");
+    expect(formatError({ payload: { message: "  " }, data: "fallback" })).toBe(
+      "fallback",
+    );
+  });
+
+  it("surfaces backend auth / throttle phrases for UI mapping", () => {
+    expect(formatError("incorrect password or recovery key")).toMatch(
+      /password|recovery/i,
+    );
+    expect(formatError("Too many unlock attempts. Try again in 10s.")).toMatch(
+      /try again|too many/i,
+    );
+  });
 });
