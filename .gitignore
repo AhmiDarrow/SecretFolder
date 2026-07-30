@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+dist/
+src-tauri/target/
+*.log
+dev-smoke*.log
+coverage/
+.vitest/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Tauri / local
+*.pdb
+src-tauri/WixTools/
+src-tauri/gen/schemas/
+# Windows-only product — drop mobile icon trees from `tauri icon`
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
+# App data (never commit a real vault)
+vault.json
+
+# Cargo.lock is committed for app reproducibility
+
+_vault_tail.txt
+
