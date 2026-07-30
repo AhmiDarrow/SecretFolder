@@ -5,6 +5,16 @@ All notable changes to SecretFolder are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-07-30
+
+### Fixed
+- **About → Check for updates** now offers **Install & restart** (download + signed install + relaunch). Previously it only reported that an update existed and never installed it
+- About page links (GitHub profile / repo / releases / Patreon) surface errors instead of failing silently
+- External URL open on Windows uses `rundll32 url.dll,FileProtocolHandler` (with `cmd start` / `explorer` fallbacks) so links open reliably under `CREATE_NO_WINDOW`
+
+### Changed
+- About update UX matches SecretSticky: busy state, pending version, progress text while downloading
+
 ## [0.1.2] — 2026-07-30
 
 ### Fixed

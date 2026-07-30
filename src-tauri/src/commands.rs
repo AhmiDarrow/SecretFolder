@@ -563,8 +563,24 @@ fn open_url_in_browser(url: &str) -> AppResult<()> {
         use std::os::windows::process::CommandExt;
         // CREATE_NO_WINDOW — avoid a flashing console when launching the browser.
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        std::process::Command::new("cmd")
+
+        // rundll32 FileProtocolHandler is the reliable association path under
+        // CREATE_NO_WINDOW (cmd `start` often no-ops when the console is hidden).
+        let primary = std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+        if primary.is_ok() {
+            return Ok(());
+        }
+
+        // Fallbacks for unusual PATH / lockdown environments.
+        let _ = std::process::Command::new("cmd")
             .args(["/C", "start", "", url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+        std::process::Command::new("explorer.exe")
+            .arg(url)
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| AppError::Message(format!("open url: {e}")))?;

@@ -27,7 +27,7 @@ Crypto: **Argon2id** password KDF + **XChaCha20-Poly1305** AEAD, with a stable c
 | **None** for vault data | No cloud sync, accounts, analytics, or telemetry |
 | **GitHub Releases only** | Signed auto-update (`latest.json` + installer artifacts) |
 
-If you need air-gapped operation, do not use Check for updates / block the endpoints in your firewall.
+If you need air-gapped operation, do not use Check for updates / Install & restart, and/or block the endpoints in your firewall.
 
 ### Product defaults
 
