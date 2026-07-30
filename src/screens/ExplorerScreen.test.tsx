@@ -17,7 +17,7 @@ const mockCheckForAppUpdate = vi.fn();
 const mockDownloadAndInstallUpdate = vi.fn();
 
 vi.mock("@tauri-apps/api/app", () => ({
-  getVersion: vi.fn(async () => "0.1.3"),
+  getVersion: vi.fn(async () => "0.1.4"),
 }));
 
 vi.mock("../updater", () => ({

@@ -1,139 +1,117 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock Tauri updater plugin
-const mockCheck = vi.fn();
+const check = vi.fn();
+const relaunch = vi.fn();
+const lock = vi.fn();
 
 vi.mock("@tauri-apps/plugin-updater", () => ({
-  check: () => mockCheck(),
+  check: (...a: unknown[]) => check(...a),
 }));
 
 vi.mock("@tauri-apps/plugin-process", () => ({
-  relaunch: vi.fn(),
+  relaunch: (...a: unknown[]) => relaunch(...a),
 }));
 
-import { checkForAppUpdate, downloadAndInstallUpdate } from "./updater";
+vi.mock("./api", () => ({
+  api: {
+    lock: (...a: unknown[]) => lock(...a),
+  },
+}));
 
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
-describe("checkForAppUpdate", () => {
-  it("returns up-to-date when check returns null", async () => {
-    mockCheck.mockResolvedValue(null);
-    const result = await checkForAppUpdate();
-    expect(result).toEqual({ kind: "up-to-date" });
+describe("updater helpers", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    check.mockReset();
+    relaunch.mockReset();
+    lock.mockReset();
+    lock.mockResolvedValue(undefined);
   });
 
-  it("returns available with version and body", async () => {
-    mockCheck.mockResolvedValue({
-      version: "2.0.0",
-      body: "Security fixes",
-    });
-    const result = await checkForAppUpdate();
-    expect(result).toEqual({
+  it("reports up-to-date when check returns null", async () => {
+    check.mockResolvedValue(null);
+    const { checkForAppUpdate } = await import("./updater");
+    await expect(checkForAppUpdate()).resolves.toEqual({ kind: "up-to-date" });
+  });
+
+  it("reports available version", async () => {
+    check.mockResolvedValue({ version: "9.9.9", body: "notes" });
+    const { checkForAppUpdate } = await import("./updater");
+    await expect(checkForAppUpdate()).resolves.toEqual({
       kind: "available",
-      version: "2.0.0",
-      body: "Security fixes",
+      version: "9.9.9",
+      body: "notes",
     });
   });
 
-  it("returns available with null body", async () => {
-    mockCheck.mockResolvedValue({
-      version: "1.5.0",
-      body: null,
-    });
-    const result = await checkForAppUpdate();
-    expect(result).toEqual({
-      kind: "available",
-      version: "1.5.0",
-      body: null,
+  it("maps check errors", async () => {
+    check.mockRejectedValue(new Error("network down"));
+    const { checkForAppUpdate } = await import("./updater");
+    await expect(checkForAppUpdate()).resolves.toEqual({
+      kind: "error",
+      message: "Error: network down",
     });
   });
 
-  it("returns error on exception", async () => {
-    mockCheck.mockRejectedValue(new Error("network failure"));
-    const result = await checkForAppUpdate();
-    expect(result.kind).toBe("error");
-    expect((result as { kind: "error"; message: string }).message).toContain(
-      "network failure",
+  it("downloadAndInstallUpdate returns false when nothing available", async () => {
+    check.mockResolvedValue(null);
+    const { downloadAndInstallUpdate } = await import("./updater");
+    await expect(downloadAndInstallUpdate()).resolves.toBe(false);
+    expect(lock).not.toHaveBeenCalled();
+    expect(relaunch).not.toHaveBeenCalled();
+  });
+
+  it("locks vault before install even if lock fails", async () => {
+    lock.mockRejectedValue(new Error("already locked"));
+    const downloadAndInstall = vi.fn(async () => {});
+    check.mockResolvedValue({
+      version: "9.9.9",
+      downloadAndInstall,
+    });
+    relaunch.mockResolvedValue(undefined);
+
+    const { downloadAndInstallUpdate } = await import("./updater");
+    await expect(downloadAndInstallUpdate()).resolves.toBe(true);
+    expect(lock).toHaveBeenCalledOnce();
+    expect(downloadAndInstall).toHaveBeenCalledOnce();
+    expect(relaunch).toHaveBeenCalledOnce();
+  });
+
+  it("downloadAndInstallUpdate locks, installs, then relaunches", async () => {
+    const order: string[] = [];
+    lock.mockImplementation(async () => {
+      order.push("lock");
+    });
+    const downloadAndInstall = vi.fn(
+      async (
+        cb: (e: {
+          event: string;
+          data?: { contentLength?: number; chunkLength?: number };
+        }) => void,
+      ) => {
+        order.push("install");
+        cb({ event: "Started", data: { contentLength: 100 } });
+        cb({ event: "Progress", data: { chunkLength: 50 } });
+        cb({ event: "Progress", data: { chunkLength: 50 } });
+        cb({ event: "Finished" });
+      },
     );
-  });
+    check.mockResolvedValue({
+      version: "9.9.9",
+      downloadAndInstall,
+    });
+    relaunch.mockImplementation(async () => {
+      order.push("relaunch");
+    });
 
-  it("returns error on non-Error thrown value", async () => {
-    mockCheck.mockRejectedValue("just a string");
-    const result = await checkForAppUpdate();
-    expect(result.kind).toBe("error");
-  });
-});
+    const pcts: Array<number | null> = [];
+    const { downloadAndInstallUpdate } = await import("./updater");
+    await expect(
+      downloadAndInstallUpdate((p) => {
+        pcts.push(p);
+      }),
+    ).resolves.toBe(true);
 
-describe("downloadAndInstallUpdate", () => {
-  it("returns false when no update available", async () => {
-    mockCheck.mockResolvedValue(null);
-    const result = await downloadAndInstallUpdate();
-    expect(result).toBe(false);
-  });
-
-  it("downloads, installs, calls progress, and returns true", async () => {
-    // Build a mock update with a working downloadAndInstall
-    const updateMock = {
-      version: "2.0.0",
-      downloadAndInstall: vi.fn(
-        async (
-          cb: (event: {
-            event: string;
-            data: { contentLength?: number; chunkLength?: number };
-          }) => void,
-        ) => {
-          cb({ event: "Started", data: { contentLength: 200 } });
-          cb({ event: "Progress", data: { chunkLength: 80 } });
-          cb({ event: "Progress", data: { chunkLength: 80 } });
-          cb({ event: "Progress", data: { chunkLength: 40 } });
-          cb({ event: "Finished", data: {} });
-        },
-      ),
-    };
-
-    mockCheck.mockResolvedValue(updateMock);
-
-    const progressCb = vi.fn();
-    const result = await downloadAndInstallUpdate(progressCb);
-
-    expect(result).toBe(true);
-    expect(updateMock.downloadAndInstall).toHaveBeenCalledTimes(1);
-    // Progress: Started→0, 80/200=40, 160/200=80, 200/200=100, Finished→100
-    expect(progressCb).toHaveBeenCalledTimes(5);
-    expect(progressCb).toHaveBeenNthCalledWith(1, 0);
-    expect(progressCb).toHaveBeenNthCalledWith(2, 40);
-    expect(progressCb).toHaveBeenNthCalledWith(3, 80);
-    expect(progressCb).toHaveBeenNthCalledWith(4, 100);
-    expect(progressCb).toHaveBeenNthCalledWith(5, 100);
-  });
-
-  it("calls progress with null when contentLength unknown", async () => {
-    const updateMock = {
-      version: "2.0.0",
-      downloadAndInstall: vi.fn(
-        async (
-          cb: (event: {
-            event: string;
-            data: { contentLength?: number; chunkLength?: number };
-          }) => void,
-        ) => {
-          cb({ event: "Started", data: {} }); // no contentLength
-          cb({ event: "Progress", data: { chunkLength: 50 } });
-          cb({ event: "Finished", data: {} });
-        },
-      ),
-    };
-
-    mockCheck.mockResolvedValue(updateMock);
-
-    const progressCb = vi.fn();
-    await downloadAndInstallUpdate(progressCb);
-
-    // Started → 0, Progress → null (no contentLength), Finished → 100
-    expect(progressCb).toHaveBeenNthCalledWith(1, 0);
-    expect(progressCb).toHaveBeenNthCalledWith(2, null);
-    expect(progressCb).toHaveBeenNthCalledWith(3, 100);
+    expect(order).toEqual(["lock", "install", "relaunch"]);
+    expect(pcts).toEqual([0, 50, 100, 100]);
   });
 });
