@@ -5,6 +5,18 @@ All notable changes to SecretFolder are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-07-30
+
+### Fixed
+- Updater signing: rotate to Tauri 2.11-compatible rsign private key format (empty password) so CI release signing succeeds
+- GitHub Actions `TAURI_SIGNING_PRIVATE_KEY` secret re-seeded to match the new keypair
+
+### Security
+- Path boundary (`path_is_under`), Session zeroize on drop, unlock throttle on crypto failures, and password minimum length 12 remain in force (from 0.1.1 hardening)
+
+### Changed
+- Updater public key in `tauri.conf.json` (new keypair). Existing 0.1.0/0.1.1 installers cannot verify 0.1.2+ update signatures — fresh install or manual upgrade required for the updater chain
+
 ## [0.1.1] — 2026-03-22
 
 ### Security

@@ -1,8 +1,8 @@
 {
   "name": "secretfolder",
   "private": true,
-  "version": "0.1.1",
-  "description": "Encrypted local file vault for Windows — folder feel, secrets safe at rest. Hi I'm Ahmi, hope this helps!",
+  "version": "0.1.2",
+  "description": "Encrypted local file vault for Windows \u2014 folder feel, secrets safe at rest. Hi I'm Ahmi, hope this helps!",
   "author": "Ahmi Darrow <https://github.com/AhmiDarrow>",
   "license": "MIT",
   "repository": {

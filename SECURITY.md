@@ -47,6 +47,15 @@ If you need air-gapped operation, do not use Check for updates / block the endpo
 - Not a FUSE/driver mount — import/export and in-app preview only
 - Recovery key is shown once at setup; store it offline
 
+
+## Updates / signing
+
+Release artifacts are signed with a Tauri updater keypair (rsign). The public key is embedded in `src-tauri/tauri.conf.json`.
+
+- Private key lives only in the maintainer key store and GitHub Actions secret `TAURI_SIGNING_PRIVATE_KEY` (rsign encrypted format, empty password).
+- Key rotation (e.g. 0.1.2) breaks automatic update verification from builds signed with the previous key — users must install the new build once, then updates chain again.
+- Never commit private keys. Prefer `TAURI_SIGNING_PRIVATE_KEY` over path-based secrets in CI.
+
 ## Reporting a vulnerability
 
 1. **Do not** open a public GitHub issue for exploitable bugs.
