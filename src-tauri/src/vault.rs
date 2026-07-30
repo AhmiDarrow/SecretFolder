@@ -146,7 +146,6 @@ impl Drop for Session {
     }
 }
 
-
 pub struct Vault {
     #[allow(dead_code)]
     root: PathBuf,
@@ -1306,7 +1305,11 @@ mod tests {
             .import_bytes("tiny.png".into(), "image/png".into(), data, None)
             .unwrap();
         let got = v.get_item(&item.id).unwrap();
-        assert!(got.data_url.as_ref().unwrap().starts_with("data:image/png;base64,"));
+        assert!(got
+            .data_url
+            .as_ref()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
     }
 
     #[test]
@@ -1342,7 +1345,9 @@ mod tests {
         v.setup("password1234").unwrap();
         v.lock();
         assert!(v
-            .unlock_with_recovery("0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000")
+            .unlock_with_recovery(
+                "0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000"
+            )
             .is_err());
     }
 
@@ -1411,8 +1416,7 @@ mod tests {
         let (_dir, mut v) = test_vault();
         let err = v.setup("short").unwrap_err();
         assert!(
-            err.to_string().contains("8")
-                || err.to_string().to_lowercase().contains("password")
+            err.to_string().contains("8") || err.to_string().to_lowercase().contains("password")
         );
         assert!(!v.status().initialized);
     }
@@ -1525,9 +1529,16 @@ mod tests {
         let (_dir, mut v) = test_vault();
         v.setup("password1234").unwrap();
         let item = v
-            .import_bytes("data.bin".into(), "application/octet-stream".into(), vec![1, 2, 3], None)
+            .import_bytes(
+                "data.bin".into(),
+                "application/octet-stream".into(),
+                vec![1, 2, 3],
+                None,
+            )
             .unwrap();
-        let err = v.update_text(&item.id, None, "new body".into()).unwrap_err();
+        let err = v
+            .update_text(&item.id, None, "new body".into())
+            .unwrap_err();
         assert!(err.to_string().contains("not a text"));
     }
 
@@ -1535,7 +1546,9 @@ mod tests {
     fn delete_nonexistent_item_errors() {
         let (_dir, mut v) = test_vault();
         v.setup("password1234").unwrap();
-        let err = v.delete_item("00000000-0000-0000-0000-000000000000", false).unwrap_err();
+        let err = v
+            .delete_item("00000000-0000-0000-0000-000000000000", false)
+            .unwrap_err();
         assert!(matches!(err, AppError::NotFound));
     }
 
@@ -1545,7 +1558,9 @@ mod tests {
         v.setup("password1234").unwrap();
         // A text item cannot serve as a parent.
         let item = v.create_text("ref.txt", "x", None).unwrap();
-        let err = v.create_text("child.txt", "body", Some(item.id.clone())).unwrap_err();
+        let err = v
+            .create_text("child.txt", "body", Some(item.id.clone()))
+            .unwrap_err();
         assert!(err.to_string().contains("not a folder"));
     }
 
@@ -1576,7 +1591,12 @@ mod tests {
         v.setup("password1234").unwrap();
         let data = vec![0xABu8; MAX_FILE_BYTES as usize];
         let item = v
-            .import_bytes("maxfile.bin".into(), "application/octet-stream".into(), data, None)
+            .import_bytes(
+                "maxfile.bin".into(),
+                "application/octet-stream".into(),
+                data,
+                None,
+            )
             .unwrap();
         let (name, out) = v.export_bytes(&item.id).unwrap();
         assert_eq!(name, "maxfile.bin");
