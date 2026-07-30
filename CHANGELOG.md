@@ -5,6 +5,19 @@ All notable changes to SecretFolder are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-07-30
+
+### Fixed
+- Published **v0.1.3** was left as a GitHub **draft**, so `/releases/latest/download/latest.json` still pointed at 0.1.2 and auto-update could not see 0.1.3; release workflow now publishes non-draft by default
+- Re-uploaded broken `latest.json` asset on the 0.1.3 release (CDN 404 despite API listing)
+
+### Security
+- **Install & restart** locks the vault (drops master key + plaintext session) **before** the signed installer runs / process relaunches
+- Documented hard guarantee: updater only replaces the app under the install directory; vault blobs stay under `%APPDATA%\com.ahmi.secretfolder` and are never a target of the update path
+
+### Changed
+- Release workflow `releaseDraft: false` so tagged builds become Latest immediately (drafts break the updater channel)
+
 ## [0.1.3] — 2026-07-30
 
 ### Fixed

@@ -91,7 +91,9 @@ jobs:
             - Network use is limited to signed app updates
 
             See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) and the README threat model.
-          releaseDraft: true
+          # Publish immediately so /releases/latest/download/latest.json works.
+          # Draft releases break auto-update (latest stays on the previous tag).
+          releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true

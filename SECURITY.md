@@ -55,6 +55,23 @@ Release artifacts are signed with a Tauri updater keypair (rsign). The public ke
 - Private key lives only in the maintainer key store and GitHub Actions secret `TAURI_SIGNING_PRIVATE_KEY` (rsign encrypted format, empty password).
 - Key rotation (e.g. 0.1.2) breaks automatic update verification from builds signed with the previous key — users must install the new build once, then updates chain again.
 - Never commit private keys. Prefer `TAURI_SIGNING_PRIVATE_KEY` over path-based secrets in CI.
+- Releases must be **published** (not draft). Draft releases leave `/releases/latest` on the previous tag and break auto-update.
+
+### Updater must never touch vault data
+
+Hard separation (by design, not best-effort):
+
+| Path | Role |
+|------|------|
+| Install dir (e.g. `%LOCALAPPDATA%\Programs\SecretFolder`) | App binary + resources — **only** thing the updater replaces |
+| `%APPDATA%\com.ahmi.secretfolder\` | Encrypted vault root (`default_vault_root`) — **never** an updater target |
+
+Additional guards:
+
+1. Before download/install, the UI path calls `lock_vault` so the master key and plaintext session map are dropped (best-effort if already locked).
+2. NSIS is `currentUser` install mode; vault stays under Roaming AppData, not next to the exe.
+3. Updater network allowlist is GitHub Releases only; no vault I/O on that code path.
+4. Uninstall/update of the app package must not delete AppData vault files (standard Tauri/NSIS layout — data dir is outside the install prefix).
 
 ## Reporting a vulnerability
 

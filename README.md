@@ -152,12 +152,13 @@ Requires repo secret `TAURI_SIGNING_PRIVATE_KEY` (see CONTRIBUTING).
 Release builds ship with the Tauri updater plugin:
 
 1. CI signs NSIS/MSI updater artifacts with a minisign key (`TAURI_SIGNING_PRIVATE_KEY` repo secret).
-2. Each release publishes `latest.json` next to the installers.
-3. The app polls `…/releases/latest/download/latest.json`, verifies the signature with the **public** key embedded in the binary, then installs (About → Check for updates).
+2. Each **published** (non-draft) release ships `latest.json` next to the installers.
+3. The app polls `…/releases/latest/download/latest.json`, verifies the signature with the **public** key embedded in the binary, then installs (About → Check for updates → Install & restart).
+4. Before install, the app **locks the vault** (drops session keys). The updater only replaces files under the install directory — **never** `%APPDATA%\com.ahmi.secretfolder`.
 
 Dev (`tauri dev`) has no installer channel — use a packaged build to exercise updates.
 
-Vault data never leaves the machine; only update checks hit GitHub.
+Vault data never leaves the machine; only update checks hit GitHub. Draft GitHub releases break the `latest` channel — CI publishes releases non-draft.
 
 ## About
 
