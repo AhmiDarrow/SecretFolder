@@ -66,8 +66,6 @@ export const api = {
     }),
   exportPath: (id: string, path: string) =>
     invoke<void>("export_path", { id, path }),
-  exportBytesB64: (id: string) =>
-    invoke<{ name: string; dataB64: string }>("export_bytes_b64", { id }),
   maxFileBytes: () => invoke<number>("max_file_bytes"),
 
   showMain: () => invoke<void>("show_main_window"),

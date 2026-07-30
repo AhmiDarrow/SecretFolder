@@ -27,9 +27,12 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            show_main(app);
+        }))
         .setup(|app| {
             let state = AppState::new()
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
             app.manage(state);
 
             build_tray(app.handle())?;
@@ -71,7 +74,6 @@ pub fn run() {
             commands::import_path,
             commands::import_bytes,
             commands::export_path,
-            commands::export_bytes_b64,
             commands::max_file_bytes,
             commands::show_main_window,
             commands::hide_main_window,

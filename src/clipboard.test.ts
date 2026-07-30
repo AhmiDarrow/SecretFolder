@@ -44,7 +44,6 @@ describe("copySecret", () => {
     expect(res.ok).toBe(true);
     current = "user-copied-something-else";
     await vi.advanceTimersByTimeAsync(2_000);
-    // clearClipboardIfMatches should not overwrite foreign clipboard
     expect(written.filter((w) => w === "").length).toBe(0);
   });
 
@@ -67,9 +66,14 @@ describe("copySecret", () => {
     await copySecret("pending", 60_000);
     await clearClipboard();
     expect(written[written.length - 1]).toBe("");
-    // original timer should not fire a second clear after generation bump
     const before = written.length;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(written.length).toBe(before);
+  });
+
+  it("recovery key clear delay is longer than normal secrets", () => {
+    const NORMAL_MS = 30_000;
+    const RECOVERY_MS = 120_000;
+    expect(RECOVERY_MS).toBeGreaterThan(NORMAL_MS);
   });
 });

@@ -28,13 +28,22 @@ export function UnlockScreen({
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [recoveryInput, setRecoveryInput] = useState("");
+  /** Local copy so setup can show the key before parent re-renders with pendingRecoveryKey. */
+  const [localRecoveryKey, setLocalRecoveryKey] = useState<string | null>(
+    pendingRecoveryKey,
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirmedSave, setConfirmedSave] = useState(false);
 
+  const displayedRecoveryKey = localRecoveryKey ?? pendingRecoveryKey;
+
   useEffect(() => {
-    if (pendingRecoveryKey) setMode("show-recovery");
+    if (pendingRecoveryKey) {
+      setLocalRecoveryKey(pendingRecoveryKey);
+      setMode("show-recovery");
+    }
   }, [pendingRecoveryKey]);
 
   async function onSubmit(e: FormEvent) {
@@ -43,8 +52,8 @@ export function UnlockScreen({
     setBusy(true);
     try {
       if (mode === "setup") {
-        if (password.length < 8) {
-          throw new Error("Password must be at least 8 characters.");
+        if (password.length < 12) {
+          throw new Error("Password must be at least 12 characters.");
         }
         if (password !== password2) {
           throw new Error("Passwords do not match.");
@@ -55,6 +64,7 @@ export function UnlockScreen({
         }
         setPassword("");
         setPassword2("");
+        setLocalRecoveryKey(key);
         setMode("show-recovery");
         onSetupComplete(key);
         return;
@@ -78,9 +88,9 @@ export function UnlockScreen({
   }
 
   async function copyRecovery() {
-    if (!pendingRecoveryKey) return;
+    if (!displayedRecoveryKey) return;
     try {
-      const res = await copySecret(pendingRecoveryKey);
+      const res = await copySecret(displayedRecoveryKey);
       if (!res.ok) throw new Error(res.error ?? "copy failed");
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
@@ -111,7 +121,7 @@ export function UnlockScreen({
             key can open your vault.
           </p>
           <pre className="recovery" role="status">
-            {pendingRecoveryKey || "..."}
+            {displayedRecoveryKey || "..."}
           </pre>
           <div className="gate-actions">
             <button type="button" className="primary" onClick={() => void copyRecovery()}>
@@ -133,7 +143,7 @@ export function UnlockScreen({
           <button
             type="button"
             className="primary"
-            disabled={!confirmedSave || !pendingRecoveryKey}
+            disabled={!confirmedSave || !displayedRecoveryKey}
             onClick={finishRecovery}
             style={{ width: "100%", marginTop: "0.35rem" }}
           >

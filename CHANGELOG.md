@@ -5,6 +5,26 @@ All notable changes to SecretFolder are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-03-22
+
+### Security
+
+- Minimum master password length raised to **12** characters (setup, change password, UI)
+- Unlock throttle counts **all** auth/crypto failures (not only `BadPassword`)
+- Import/export path allowlists use **component-boundary** checks (no string-prefix sibling escapes)
+- Session plaintext item map cleared on lock; temporary content-key copies zeroized after password change
+- CSP connect-src tightened for updater endpoints; recovery-key UI holds local copy until confirmed
+
+### Added
+
+- Broader frontend + Rust test coverage (throttle, path validation, unlock/setup UI, explorer, updater helpers)
+- `npm run test:all` script (TypeScript/Vitest + `cargo test`)
+
+### Fixed
+
+- Recovery key remains visible after first-run setup until the user confirms save
+- Settings password change enforces the same 12-character minimum as setup
+
 ## [0.1.0] — 2026-07-29
 
 ### Added
