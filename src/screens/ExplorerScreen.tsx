@@ -16,6 +16,7 @@ import { formatError } from "../errors";
 import type { ItemDetail, ItemPreview, VaultStatus } from "../types";
 import { MAX_FILE_BYTES } from "../types";
 import { checkForAppUpdate } from "../updater";
+import appMark from "../assets/app-mark.png";
 
 /** Basename from an absolute OS path (Windows or POSIX). */
 function pathFileName(p: string): string {
@@ -972,8 +973,8 @@ export function ExplorerScreen({ status, onLocked }: Props) {
     <div className="explorer">
       <header className="explorer-top">
         <div className="brand-inline">
-          <span className="brand-mark sm" aria-hidden>
-            📁
+          <span className="logo-mark brand-mark sm" aria-hidden>
+            <img src={appMark} alt="" width={28} height={28} draggable={false} />
           </span>
           <strong>SecretFolder</strong>
           <span className="muted small">
@@ -1640,6 +1641,9 @@ export function ExplorerScreen({ status, onLocked }: Props) {
 
       {panel === "about" && (
         <div className="settings-panel card" aria-label="About SecretFolder">
+          <div className="logo-mark about-mark" aria-hidden>
+            <img src={appMark} alt="" width={44} height={44} draggable={false} />
+          </div>
           <h2>About</h2>
           <p className="about-hello">Hi I&apos;m Ahmi, hope this helps!</p>
           <p className="muted small">

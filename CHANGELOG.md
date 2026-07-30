@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Export uses native save dialog (WebView blob download path removed)
 - Folder/rename dialog no longer wipes input while typing
 - Folder checkbox / selection no longer opens the folder (Explorer-style click vs double-click)
+- App icon: single folder + black lock (no double-imposed lock); brand mark on explorer header and About; taskbar / tray / installer ICO set regenerated from the approved master
 
 ### Notes
 
