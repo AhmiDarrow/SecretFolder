@@ -730,7 +730,10 @@ mod tests {
         }
         // First block: cooldown step [0] = 10 seconds
         let err1 = t.check().unwrap_err().to_string();
-        assert!(err1.contains("10") || err1.contains("try again"), "msg: {err1}");
+        assert!(
+            err1.contains("10") || err1.contains("try again"),
+            "msg: {err1}"
+        );
         // Simulate waiting past first cooldown
         t.blocked_until = None;
         // Record another batch to re-trigger threshold and escalate cooldown
@@ -757,11 +760,10 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod path_boundary_tests {
-    use std::path::PathBuf;
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn path_is_under_respects_component_boundary() {

@@ -31,8 +31,7 @@ pub fn run() {
             show_main(app);
         }))
         .setup(|app| {
-            let state = AppState::new()
-                .map_err(|e| std::io::Error::other(e.to_string()))?;
+            let state = AppState::new().map_err(|e| std::io::Error::other(e.to_string()))?;
             app.manage(state);
 
             build_tray(app.handle())?;
