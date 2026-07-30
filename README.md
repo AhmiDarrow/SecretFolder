@@ -8,7 +8,9 @@ Use it for recovery codes, exports, screenshots of secrets, notes, and anything 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](https://github.com/AhmiDarrow/SecretFolder/releases)
 
-
+<p align="center">
+  <img src="src-tauri/icons/128x128.png" alt="SecretFolder icon" width="96" height="96" />
+</p>
 
 <p align="center">
   <strong>Local-only · Master password · Folders + explorer · System tray</strong>

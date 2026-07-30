@@ -8,13 +8,14 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC_CANDIDATES = [
-    Path(r"C:\Users\Administrator\Desktop\SecretFolder-icon-preview.png"),
-    Path(r"C:\Users\Administrator\.remedy\comfy_out\remedy_comfy_00014_.png"),
+    # Approved Comfy concept (single lock baked in — do not composite another lock).
     Path(
         r"C:\Users\Administrator\.remedy\attachments"
-        r"\24a7b1c0-854c-4d94-9530-16ca23645561\remedy_comfy_00014_.png"
+        r"\24a7b1c0-854c-4d94-9530-16ca23645561\remedy_comfy_00015_.png"
     ),
-    Path(r"C:\Users\Administrator\Documents\comfy\ComfyUI\output\remedy_comfy_00014_.png"),
+    Path(r"C:\Users\Administrator\Desktop\SecretFolder-icon-preview.png"),
+    Path(r"C:\Users\Administrator\.remedy\comfy_out\remedy_comfy_00015_.png"),
+    ROOT / "app-icon.png",
 ]
 
 
