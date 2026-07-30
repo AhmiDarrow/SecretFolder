@@ -15,8 +15,16 @@ import { copySecret } from "../clipboard";
 import { formatError } from "../errors";
 import type { ItemDetail, ItemPreview, VaultStatus } from "../types";
 import { MAX_FILE_BYTES } from "../types";
-import { checkForAppUpdate } from "../updater";
+import {
+  checkForAppUpdate,
+  downloadAndInstallUpdate,
+} from "../updater";
 import appMark from "../assets/app-mark.png";
+
+const GITHUB_PROFILE = "https://github.com/AhmiDarrow";
+const GITHUB_REPO = "https://github.com/AhmiDarrow/SecretFolder";
+const GITHUB_RELEASES = "https://github.com/AhmiDarrow/SecretFolder/releases";
+const PATREON_URL = "https://www.patreon.com/cw/AhmiDarrow";
 
 /** Basename from an absolute OS path (Windows or POSIX). */
 function pathFileName(p: string): string {
@@ -147,6 +155,8 @@ export function ExplorerScreen({ status, onLocked }: Props) {
 
   const [version, setVersion] = useState("…");
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [pendingVersion, setPendingVersion] = useState<string | null>(null);
 
   // Focus/select only when the dialog opens — not on every keystroke
   // (nameDialog is a new object each onChange; depending on it re-selects all text).
@@ -957,16 +967,55 @@ export function ExplorerScreen({ status, onLocked }: Props) {
     }
   }
 
-  async function onCheckUpdate() {
-    setUpdateMsg("Checking…");
+  async function openAboutLink(url: string) {
     try {
-      const res = await checkForAppUpdate();
-      if (res.kind === "up-to-date") setUpdateMsg("You're up to date.");
-      else if (res.kind === "available")
-        setUpdateMsg(`Update available: ${res.version}`);
-      else setUpdateMsg(res.message);
+      await api.openExternal(url);
     } catch (e) {
       setUpdateMsg(formatError(e));
+    }
+  }
+
+  async function onCheckUpdate() {
+    setUpdateBusy(true);
+    setUpdateMsg("Checking…");
+    setPendingVersion(null);
+    try {
+      const res = await checkForAppUpdate();
+      if (res.kind === "up-to-date") {
+        setUpdateMsg(`You're on the latest version (${version}).`);
+      } else if (res.kind === "available") {
+        setPendingVersion(res.version);
+        setUpdateMsg(`Update ${res.version} is ready to install.`);
+      } else {
+        setUpdateMsg(res.message);
+      }
+    } catch (e) {
+      setUpdateMsg(formatError(e));
+    } finally {
+      setUpdateBusy(false);
+    }
+  }
+
+  async function onInstallUpdate() {
+    setUpdateBusy(true);
+    setUpdateMsg("Downloading update…");
+    try {
+      const ok = await downloadAndInstallUpdate((pct) => {
+        if (pct == null) {
+          setUpdateMsg("Downloading update…");
+        } else {
+          setUpdateMsg(`Downloading update… ${pct}%`);
+        }
+      });
+      if (!ok) {
+        setUpdateMsg(`You're on the latest version (${version}).`);
+        setPendingVersion(null);
+      }
+      // relaunch() exits the process on success
+    } catch (e) {
+      setUpdateMsg(formatError(e));
+    } finally {
+      setUpdateBusy(false);
     }
   }
   return (
@@ -1658,54 +1707,68 @@ export function ExplorerScreen({ status, onLocked }: Props) {
             <button
               type="button"
               className="btn sm primary"
-              onClick={() =>
-                void api.openExternal("https://github.com/AhmiDarrow")
-              }
+              onClick={() => void openAboutLink(GITHUB_PROFILE)}
             >
               GitHub profile
             </button>
             <button
               type="button"
               className="btn sm"
-              onClick={() =>
-                void api.openExternal(
-                  "https://github.com/AhmiDarrow/SecretFolder",
-                )
-              }
+              onClick={() => void openAboutLink(GITHUB_REPO)}
             >
               Project repo
             </button>
             <button
               type="button"
               className="btn sm"
-              onClick={() =>
-                void api.openExternal(
-                  "https://github.com/AhmiDarrow/SecretFolder/releases",
-                )
-              }
+              onClick={() => void openAboutLink(GITHUB_RELEASES)}
             >
               Releases
             </button>
             <button
               type="button"
               className="btn sm"
-              onClick={() =>
-                void api.openExternal("https://www.patreon.com/cw/AhmiDarrow")
-              }
+              onClick={() => void openAboutLink(PATREON_URL)}
             >
               Patreon
             </button>
           </div>
-          <div className="row gap" style={{ marginTop: "0.75rem" }}>
+          <div className="row gap wrap" style={{ marginTop: "0.75rem" }}>
             <button
               type="button"
               className="btn sm"
+              disabled={busy || updateBusy}
               onClick={() => void onCheckUpdate()}
             >
-              Check for updates
+              {updateBusy && !pendingVersion
+                ? "Checking…"
+                : "Check for updates"}
             </button>
+            {pendingVersion && (
+              <button
+                type="button"
+                className="btn sm primary"
+                disabled={busy || updateBusy}
+                onClick={() => void onInstallUpdate()}
+              >
+                {updateBusy
+                  ? "Installing…"
+                  : `Install ${pendingVersion} & restart`}
+              </button>
+            )}
           </div>
-          {updateMsg && <p className="muted">{updateMsg}</p>}
+          {updateMsg && (
+            <p
+              className={
+                updateMsg.startsWith("You're on") ||
+                updateMsg.startsWith("Update ")
+                  ? "muted ok"
+                  : "muted"
+              }
+            >
+              {updateMsg}
+            </p>
+          )}
         </div>
       )}
 

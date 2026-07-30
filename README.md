@@ -39,8 +39,8 @@ Sibling product to [SecretSticky](https://github.com/AhmiDarrow/SecretSticky) (e
 | **UX** | Close window → tray; Inter font (self-hosted); dark chrome + amber accent |
 | **Clipboard** | Copy secrets with auto-clear (default 30s) |
 | **Idle** | Auto-lock after inactivity (default 15 minutes) |
-| **Updates** | Signed auto-update from GitHub Releases (About → Check for updates) |
-| **About** | “Hi I'm Ahmi, hope this helps!” + profile / repo / releases / Patreon |
+| **Updates** | Signed auto-update from GitHub Releases (About → Check for updates → Install & restart) |
+| **About** | “Hi I'm Ahmi, hope this helps!” + profile / repo / releases / Patreon (opens system browser) |
 
 ## Install
 
@@ -52,7 +52,7 @@ Download the latest Windows installer from
 
 The NSIS installer creates **Start Menu** and **Desktop** shortcuts that use the folder+lock icon (same mark as the taskbar and tray).
 
-Installed builds can update themselves: **About → Check for updates** downloads the next signed release from GitHub and restarts the app.
+Installed builds can update themselves: **About → Check for updates**, then **Install & restart** downloads the next signed release from GitHub and relaunches the app.
 
 ### From source
 
