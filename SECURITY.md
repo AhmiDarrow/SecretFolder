@@ -1,5 +1,24 @@
 # Security Policy
 
+## Non-negotiable: updates must NEVER put vault data at risk
+
+**Hard product invariant.** App updates (NSIS/MSI install, in-app auto-update, or replacing the binary) must **never**:
+
+1. Delete, truncate, wipe, or overwrite `%APPDATA%\com.ahmi.secretfolder\` (including `vault.json` / `blobs/`) as part of install/update
+2. Rewrite ciphertext so existing items cannot decrypt with the same master password / recovery key
+3. Ship a vault-format change that cannot **read** vaults written by every prior supported 0.1.x build
+4. Replace a load/decrypt failure with an empty vault “to fix” it
+
+**Allowed / required:**
+
+- Installers and the updater replace **application binaries only** under the install dir — never the user vault under AppData
+- On-disk format evolution is **additive and backward-compatible** only (new optional fields with defaults; read old → write new only after a successful unlock)
+- Atomic vault index saves (`vault.json.tmp` then OS replace-in-place — never delete `vault.json` before the new file is durable)
+- Last-known-good sibling `vault.json.bak` before each successful replace; boot restores from `.bak` if the live file is missing or unreadable
+- UI or ACL bugs may block *display*, but must not destroy *ciphertext on disk*
+
+If a change could violate this, it **does not ship**. Fix data safety first.
+
 ## Threat model (honest)
 
 SecretFolder is an **at-rest** encrypted file vault for a single trusted Windows user.
@@ -9,6 +28,7 @@ SecretFolder is an **at-rest** encrypted file vault for a single trusted Windows
 - Vault data under the app data directory (`%APPDATA%\com.ahmi.secretfolder\`)
 - Item **names** and **contents** (authenticated encryption)
 - Casual offline access (stolen disk image, unattended backup copy)
+- Continuity of saved files across app updates (see invariant above)
 
 Crypto: **Argon2id** password KDF + **XChaCha20-Poly1305** AEAD, with a stable content key so password changes do not rewrite every blob. AAD strings use the `secretfolder-*` namespace (not SecretSticky).
 
@@ -72,6 +92,7 @@ Additional guards:
 2. NSIS is `currentUser` install mode; vault stays under Roaming AppData, not next to the exe.
 3. Updater network allowlist is GitHub Releases only; no vault I/O on that code path.
 4. Uninstall/update of the app package must not delete AppData vault files (standard Tauri/NSIS layout — data dir is outside the install prefix).
+5. Index saves use temp + `MoveFileExW(REPLACE_EXISTING | WRITE_THROUGH)` on Windows (never delete-then-rename) and keep `vault.json.bak` as last-known-good.
 
 ## Reporting a vulnerability
 

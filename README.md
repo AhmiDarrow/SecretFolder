@@ -79,14 +79,16 @@ npm run tauri:build    # release installers under src-tauri/target/release/bundl
 ```
 %APPDATA%\com.ahmi.secretfolder\
   vault.json          # index + KDF params (encrypted names / metadata)
+  vault.json.bak      # last-known-good sibling before each replace
   blobs\              # encrypted item payloads
 ```
 
 - **Encrypted:** item names, content blobs  
 - **Plaintext by design:** structural ids, kind, sizes, timestamps needed to list chrome without decrypting every payload early  
 
-Atomic replace on save (temp file + replace) so a crash mid-write is less likely to corrupt the vault.
+Durable save path: write + flush temp → snapshot `.bak` → atomic replace into `vault.json` (Windows uses `MoveFileExW` replace-in-place — never delete-then-rename). A crash mid-write must not leave you with zero copies of secrets.
 
+**Non-negotiable product rule:** installing or auto-updating SecretFolder only replaces the application. Your vault stays under `%APPDATA%\com.ahmi.secretfolder\` and must remain unlockable with the same master password / recovery key after every update. App releases must not wipe files, rewrite ciphertext incompatibly, or ship changes that leave the vault permanently unreadable. Full invariant: [SECURITY.md](SECURITY.md).
 ## Security model
 
 ### Protects
