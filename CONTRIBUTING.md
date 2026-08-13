@@ -46,6 +46,12 @@ Before a PR: green `npm run test:all` and a quick manual smoke of unlock → imp
 - Icons, productName, GitHub repo: SecretFolder-specific
 - Never read/write SecretSticky vault files or keys
 
+## Vault durability rules (do not break)
+
+1. **AppData is sacred** — updates replace the app binary only. Never delete/rewrite `%APPDATA%\com.ahmi.secretfolder\` from install/update paths.
+2. **Backward-compatible vault reads** — any new code must still unlock and list items from vaults written by prior 0.1.x builds. Prefer optional fields + defaults; no destructive migrations. Persist via temp + OS replace-in-place (never delete `vault.json` before the new bytes are durable); keep `vault.json.bak` as last-known-good.
+3. **No silent data wipe** — failed decrypt, locked vault, or ACL deny must error clearly; never replace the vault with an empty one “to fix” load errors.
+
 ## Scope discipline
 
 In scope: explorer, text editor, image preview, import/export, tray, idle lock, clipboard clear, signed updater.

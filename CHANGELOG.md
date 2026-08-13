@@ -5,6 +5,17 @@ All notable changes to SecretFolder are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2026-08-11
+
+### Security
+- **Vault durability (Windows):** replace `vault.json` with `MoveFileExW(REPLACE_EXISTING | WRITE_THROUGH)` — never delete the live file before the new bytes are at the destination (closes a crash/failure window that could wipe the only copy of secrets)
+- Snapshot `vault.json.bak` before each successful index replace; boot restores from `.bak` if the live file is missing or unreadable (never treat that as a fresh install)
+- Refuse to open vault format versions newer than this build supports (no write-back that could strand secrets)
+- Hard product invariant documented: updates replace the app binary only; vault under `%APPDATA%\com.ahmi.secretfolder` must remain unlockable after every update
+
+### Fixed
+- Windows index save path no longer uses delete-then-rename (same class of bug fixed in SecretSticky 0.1.6)
+
 ## [0.1.4] — 2026-07-30
 
 ### Fixed

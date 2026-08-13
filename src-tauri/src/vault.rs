@@ -2,9 +2,22 @@
 //!
 //! Layout (app data dir, never shared with SecretSticky):
 //!   vault.json          — header + encrypted item index (names encrypted)
+//!   vault.json.bak      — last-known-good sibling before each replace
 //!   blobs/<uuid>.bin    — per-file ciphertext (XChaCha20-Poly1305)
 //!
 //! AAD namespace: secretfolder-*
+//!
+//! # Durability (non-negotiable)
+//!
+//! - Installers and auto-update replace the **app binary only**. They must never
+//!   touch `%APPDATA%\com.ahmi.secretfolder\`.
+//! - Saves use temp + OS replace-in-place (Windows: `MoveFileExW` REPLACE_EXISTING
+//!   | WRITE_THROUGH). **Never** delete the live `vault.json` before the new bytes
+//!   are durable at the destination.
+//! - A last-known-good `vault.json.bak` is snapshotted before each replace; boot
+//!   restores from `.bak` if the live file is missing or unreadable.
+//! - Failed decrypt / locked vault / ACL deny must error clearly — never replace
+//!   the vault with an empty one “to fix” load errors.
 
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -166,12 +179,33 @@ impl Vault {
         let blobs_dir = root.join("blobs");
         fs::create_dir_all(&blobs_dir)?;
         let index_path = root.join("vault.json");
+        // Prefer the live vault. If it is missing (crash mid-replace on older
+        // builds) but a sibling `.bak` exists, restore it — never treat that as
+        // "uninitialized" and allow setup to mint an empty vault over secrets.
+        let bak = backup_path_for(&index_path);
+        if !index_path.exists() && bak.exists() {
+            restore_backup(&bak, &index_path)?;
+        }
+
         let file = if index_path.exists() {
-            let raw = fs::read_to_string(&index_path)?;
-            Some(
-                serde_json::from_str(&raw)
-                    .map_err(|e| AppError::Io(format!("vault.json parse: {e}")))?,
-            )
+            match load_vault_file(&index_path) {
+                Ok(f) => Some(f),
+                Err(primary_err) => {
+                    // Corrupt/unreadable primary: try last-known-good backup.
+                    // Never delete the primary here — operator can recover offline.
+                    if bak.exists() {
+                        match load_vault_file(&bak) {
+                            Ok(f) => {
+                                let _ = restore_backup(&bak, &index_path);
+                                Some(f)
+                            }
+                            Err(_) => return Err(primary_err),
+                        }
+                    } else {
+                        return Err(primary_err);
+                    }
+                }
+            }
         } else {
             None
         };
@@ -897,7 +931,8 @@ impl Vault {
 
         let json = serde_json::to_vec_pretty(file)
             .map_err(|e| AppError::Io(format!("serialize vault: {e}")))?;
-        atomic_write(&self.index_path, &json)?;
+        // Index is the source of truth for unlock — use bak + atomic replace.
+        atomic_write_with_backup(&self.index_path, &json)?;
         Ok(())
     }
 }
@@ -1008,7 +1043,43 @@ pub fn guess_mime(name: &str) -> String {
         .to_string()
 }
 
-/// Atomic write: temp file in same dir + replace (Windows-safe).
+fn backup_path_for(path: &Path) -> PathBuf {
+    path.with_extension("json.bak")
+}
+
+fn load_vault_file(path: &Path) -> AppResult<VaultFile> {
+    let raw = fs::read_to_string(path)?;
+    let file: VaultFile = serde_json::from_str(&raw)
+        .map_err(|e| AppError::Io(format!("vault.json parse: {e}")))?;
+    // v1 is the baseline. Additive fields use serde defaults.
+    // version 0 is invalid; > current means this build must not open/write-back
+    // (could strand or rewrite secrets the newer format expects).
+    if file.header.version == 0 {
+        return Err(AppError::Message(format!(
+            "vault format version {} is invalid",
+            file.header.version
+        )));
+    }
+    if file.header.version > VAULT_VERSION {
+        return Err(AppError::Message(format!(
+            "vault format version {} is newer than this app supports ({}) — upgrade SecretFolder; refusing to open so saved files are not rewritten",
+            file.header.version, VAULT_VERSION
+        )));
+    }
+    Ok(file)
+}
+
+/// Copy backup into the live vault path without deleting backup first.
+fn restore_backup(bak: &Path, live: &Path) -> AppResult<()> {
+    if let Some(parent) = live.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    // Prefer copy so the .bak remains if the subsequent live write fails.
+    fs::copy(bak, live)?;
+    Ok(())
+}
+
+/// Atomic write for blobs: temp + replace (no .bak — blob ids are immutable content).
 fn atomic_write(path: &Path, data: &[u8]) -> AppResult<()> {
     let parent = path
         .parent()
@@ -1016,7 +1087,7 @@ fn atomic_write(path: &Path, data: &[u8]) -> AppResult<()> {
     fs::create_dir_all(parent)?;
     let tmp = parent.join(format!(
         ".{}.tmp",
-        path.file_name().and_then(|s| s.to_str()).unwrap_or("vault")
+        path.file_name().and_then(|s| s.to_str()).unwrap_or("blob")
     ));
     {
         let mut f = File::create(&tmp)?;
@@ -1027,12 +1098,94 @@ fn atomic_write(path: &Path, data: &[u8]) -> AppResult<()> {
     Ok(())
 }
 
-fn replace_file(from: &Path, to: &Path) -> AppResult<()> {
-    // Windows cannot rename over an existing file — remove destination first.
-    if to.exists() {
-        fs::remove_file(to)?;
+/// Write vault index via temp + last-known-good bak + OS replace-in-place.
+///
+/// Never truncates the live `vault.json` in place: a failed write must not
+/// destroy the previous good file (update / crash safety for saved secrets).
+fn atomic_write_with_backup(path: &Path, data: &[u8]) -> AppResult<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::Io("no parent".into()))?;
+    fs::create_dir_all(parent)?;
+    let tmp = path.with_extension("json.tmp");
+    // Write + flush temp fully before swapping into place so a power loss
+    // cannot leave a half-written live vault as the only copy.
+    {
+        let mut f = File::create(&tmp)?;
+        f.write_all(data)?;
+        f.sync_all()?;
     }
-    fs::rename(from, to)?;
+    // Keep a last-known-good sibling before replacing the live file.
+    // replace_file must never delete the live vault before the new bytes
+    // are durable at the destination path (see SECURITY.md invariant).
+    if path.exists() {
+        let bak = backup_path_for(path);
+        // Best-effort snapshot of the previous good file. Failure here must
+        // not block the save — the live file is still intact until replace.
+        let _ = fs::copy(path, &bak);
+    }
+    replace_file(&tmp, path)?;
+    Ok(())
+}
+
+/// Replace `from` → `to` without a delete-then-rename hole.
+///
+/// **Critical for vault safety:** older Windows code did `remove_file(to)` then
+/// `rename(from, to)`. If rename failed (or the process died between the two),
+/// the only copy of `vault.json` was gone. That must never happen.
+fn replace_file(from: &Path, to: &Path) -> AppResult<()> {
+    #[cfg(windows)]
+    {
+        windows_replace_file(from, to)
+    }
+    #[cfg(not(windows))]
+    {
+        // POSIX rename replaces atomically on the same filesystem.
+        fs::rename(from, to)?;
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+fn windows_replace_file(from: &Path, to: &Path) -> AppResult<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    fn wide(path: &Path) -> Vec<u16> {
+        path.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    // MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+    // Replaces the destination in one kernel call — never deletes `to` first.
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn MoveFileExW(
+            lp_existing_file_name: *const u16,
+            lp_new_file_name: *const u16,
+            dw_flags: u32,
+        ) -> i32;
+    }
+
+    let from_w = wide(from);
+    let to_w = wide(to);
+    let ok = unsafe {
+        MoveFileExW(
+            from_w.as_ptr(),
+            to_w.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if ok == 0 {
+        let err = std::io::Error::last_os_error();
+        return Err(AppError::Message(format!(
+            "atomic vault replace failed (saved files left untouched): {err}"
+        )));
+    }
     Ok(())
 }
 
@@ -1661,5 +1814,153 @@ mod tests {
         v.setup("password1234").unwrap();
         let s = v.status();
         assert_eq!(s.item_count, 0);
+    }
+
+    #[test]
+    fn vault_format_version_is_backward_compatible_baseline() {
+        assert_eq!(
+            VAULT_VERSION, 1,
+            "bumping VAULT_VERSION requires a compatible reader for prior on-disk vaults; \
+             updates must never strand saved files"
+        );
+    }
+
+    #[test]
+    fn persist_replace_writes_bak_sibling() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let index = root.join("vault.json");
+        let id = {
+            let mut v = Vault::open_path_for_test(root.clone()).unwrap();
+            v.setup("password1234").unwrap();
+            let item = v.create_text("one.txt", "body-one", None).unwrap();
+            // Second write must replace vault.json and snapshot .bak first.
+            v.update_text(&item.id, Some("one.txt".into()), "body-two".into())
+                .unwrap();
+            item.id
+        };
+        assert!(index.exists());
+        let bak = backup_path_for(&index);
+        assert!(
+            bak.exists(),
+            "vault.json.bak must be written before replace so a failed swap cannot strand secrets"
+        );
+        let mut v2 = Vault::open_path_for_test(root).unwrap();
+        v2.unlock("password1234").unwrap();
+        let got = v2.get_item(&id).unwrap();
+        assert_eq!(got.text.as_deref(), Some("body-two"));
+    }
+
+    /// If vault.json is missing but vault.json.bak remains (classic delete-then-rename
+    /// crash on older builds), open_root must restore secrets — never look uninitialized.
+    #[test]
+    fn missing_live_vault_restores_from_bak() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let index = root.join("vault.json");
+        let bak = backup_path_for(&index);
+        let id = {
+            let mut v = Vault::open_path_for_test(root.clone()).unwrap();
+            v.setup("password1234").unwrap();
+            let item = v
+                .create_text("bak-name.txt", "bak-body-secret", None)
+                .unwrap();
+            // Second persist: bak freezes on the secret-bearing revision.
+            v.update_text(
+                &item.id,
+                Some("bak-name.txt".into()),
+                "bak-body-secret".into(),
+            )
+            .unwrap();
+            item.id
+        };
+        assert!(bak.exists());
+        // Simulate catastrophic mid-replace: live file gone, bak still present.
+        fs::remove_file(&index).unwrap();
+        assert!(!index.exists());
+
+        let mut v2 = Vault::open_path_for_test(root.clone()).unwrap();
+        assert!(
+            v2.status().initialized,
+            "must not treat missing live + present bak as fresh install"
+        );
+        assert!(index.exists(), "live vault.json must be restored from bak");
+        v2.unlock("password1234").unwrap();
+        let got = v2.get_item(&id).unwrap();
+        assert_eq!(got.text.as_deref(), Some("bak-body-secret"));
+        assert_eq!(got.name, "bak-name.txt");
+    }
+
+    /// Corrupt live file must not wipe secrets when a good bak exists.
+    #[test]
+    fn corrupt_live_vault_falls_back_to_bak() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let index = root.join("vault.json");
+        let bak = backup_path_for(&index);
+        let id = {
+            let mut v = Vault::open_path_for_test(root.clone()).unwrap();
+            v.setup("password1234").unwrap();
+            let item = v.create_text("good.txt", "still-here", None).unwrap();
+            // Advance live once more so bak freezes on the secret-bearing revision.
+            v.update_text(&item.id, Some("good.txt".into()), "still-here".into())
+                .unwrap();
+            item.id
+        };
+        // Poison the live file; bak still holds the previous good snapshot.
+        fs::write(&index, "{not-json").unwrap();
+        assert!(bak.exists());
+
+        let mut v2 = Vault::open_path_for_test(root).unwrap();
+        assert!(v2.status().initialized);
+        v2.unlock("password1234").unwrap();
+        let got = v2.get_item(&id).unwrap();
+        assert_eq!(got.text.as_deref(), Some("still-here"));
+        assert_eq!(got.name, "good.txt");
+    }
+
+    /// replace_file must never delete the destination before the new file is in place.
+    #[test]
+    fn replace_file_keeps_destination_if_source_missing() {
+        let dir = tempdir().unwrap();
+        let live = dir.path().join("vault.json");
+        let missing = dir.path().join("nope.json.tmp");
+        fs::write(&live, r#"{"keep":true}"#).unwrap();
+        let err = replace_file(&missing, &live);
+        assert!(err.is_err(), "missing source must fail replace");
+        assert!(
+            live.exists(),
+            "failed replace must leave existing vault.json intact"
+        );
+        let body = fs::read_to_string(&live).unwrap();
+        assert!(
+            body.contains("keep"),
+            "destination contents must survive: {err:?}"
+        );
+    }
+
+    #[test]
+    fn refuses_newer_vault_format_version() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        {
+            let mut v = Vault::open_path_for_test(root.clone()).unwrap();
+            v.setup("password1234").unwrap();
+        }
+        let index = root.join("vault.json");
+        let raw = fs::read_to_string(&index).unwrap();
+        let mut file: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        file["header"]["version"] = serde_json::json!(VAULT_VERSION + 1);
+        fs::write(&index, serde_json::to_string_pretty(&file).unwrap()).unwrap();
+        // Drop bak so open cannot silently fall back past the version check.
+        let bak = backup_path_for(&index);
+        let _ = fs::remove_file(&bak);
+        let opened = Vault::open_path_for_test(root);
+        assert!(opened.is_err(), "newer vault format must be refused");
+        let msg = opened.err().unwrap().to_string();
+        assert!(
+            msg.contains("newer") || msg.contains("upgrade"),
+            "expected version refusal, got: {msg}"
+        );
     }
 }
