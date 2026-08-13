@@ -1049,8 +1049,8 @@ fn backup_path_for(path: &Path) -> PathBuf {
 
 fn load_vault_file(path: &Path) -> AppResult<VaultFile> {
     let raw = fs::read_to_string(path)?;
-    let file: VaultFile = serde_json::from_str(&raw)
-        .map_err(|e| AppError::Io(format!("vault.json parse: {e}")))?;
+    let file: VaultFile =
+        serde_json::from_str(&raw).map_err(|e| AppError::Io(format!("vault.json parse: {e}")))?;
     // v1 is the baseline. Additive fields use serde defaults.
     // version 0 is invalid; > current means this build must not open/write-back
     // (could strand or rewrite secrets the newer format expects).
