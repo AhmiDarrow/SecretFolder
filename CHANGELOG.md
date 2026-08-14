@@ -5,6 +5,15 @@ All notable changes to SecretFolder are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] — 2026-08-11
+
+### Changed
+- **Settings & About panels** are compact: tighter padding/type, no inner scroll region, denser About header + link/update row so content fits without scrolling
+- Settings idle-lock copy states the **15-minute default** clearly
+
+### Notes
+- Idle auto-lock default remains **15 minutes** (`DEFAULT_IDLE_LOCK_SECS = 900`)
+
 ## [0.1.5] — 2026-08-11
 
 ### Security
