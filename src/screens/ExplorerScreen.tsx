@@ -1652,6 +1652,9 @@ export function ExplorerScreen({ status, onLocked }: Props) {
               </button>
             </div>
           </label>
+          <p className="muted small">
+            Default is 15 minutes of inactivity. Set and save to change.
+          </p>
 
           <h3>Change master password</h3>
           <label className="field">
@@ -1689,34 +1692,39 @@ export function ExplorerScreen({ status, onLocked }: Props) {
       )}
 
       {panel === "about" && (
-        <div className="settings-panel card" aria-label="About SecretFolder">
-          <div className="logo-mark about-mark" aria-hidden>
-            <img src={appMark} alt="" width={44} height={44} draggable={false} />
+        <div
+          className="settings-panel card about-panel-compact"
+          aria-label="About SecretFolder"
+        >
+          <div className="about-head">
+            <div className="logo-mark about-mark" aria-hidden>
+              <img src={appMark} alt="" width={36} height={36} draggable={false} />
+            </div>
+            <div>
+              <h2>About</h2>
+              <p className="about-hello">Hi I&apos;m Ahmi, hope this helps!</p>
+            </div>
           </div>
-          <h2>About</h2>
-          <p className="about-hello">Hi I&apos;m Ahmi, hope this helps!</p>
           <p className="muted small">
-            Local-only encrypted folder vault for Windows. MIT licensed.
+            Local-only encrypted folder vault for Windows · MIT · v{version}
           </p>
-          <p className="muted small">Version {version}</p>
           <p className="muted small">
-            Vault data never leaves this PC. Network is used only for signed app
-            updates from GitHub Releases.
+            Vault data stays on this PC. Network is only for signed GitHub updates.
           </p>
-          <div className="row gap wrap">
+          <div className="about-links">
             <button
               type="button"
               className="btn sm primary"
               onClick={() => void openAboutLink(GITHUB_PROFILE)}
             >
-              GitHub profile
+              GitHub
             </button>
             <button
               type="button"
               className="btn sm"
               onClick={() => void openAboutLink(GITHUB_REPO)}
             >
-              Project repo
+              Repo
             </button>
             <button
               type="button"
@@ -1733,7 +1741,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
               Patreon
             </button>
           </div>
-          <div className="row gap wrap" style={{ marginTop: "0.75rem" }}>
+          <div className="about-update">
             <button
               type="button"
               className="btn sm"

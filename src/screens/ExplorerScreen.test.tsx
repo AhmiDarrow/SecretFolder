@@ -150,13 +150,13 @@ describe("ExplorerScreen", () => {
     mockOpenExternal.mockResolvedValue(undefined);
     render(<ExplorerScreen status={status} onLocked={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /^about$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /github profile/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^github$/i }));
     await waitFor(() => {
       expect(mockOpenExternal).toHaveBeenCalledWith(
         "https://github.com/AhmiDarrow",
       );
     });
-    fireEvent.click(screen.getByRole("button", { name: /project repo/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^repo$/i }));
     await waitFor(() => {
       expect(mockOpenExternal).toHaveBeenCalledWith(
         "https://github.com/AhmiDarrow/SecretFolder",
