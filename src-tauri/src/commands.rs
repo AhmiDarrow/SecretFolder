@@ -734,7 +734,7 @@ mod tests {
 
     #[test]
     fn validate_import_path_rejects_missing_file() {
-        let p = PathBuf::from(r"C:\Users\Administrator\Desktop\sf-missing-no-such-file-xyz.bin");
+        let p = PathBuf::from(r"C:\nonexistent\sf-missing-no-such-file-xyz.bin");
         assert!(validate_import_path(&p).is_err());
     }
 
