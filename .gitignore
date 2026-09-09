@@ -39,3 +39,7 @@ vault.json
 
 _vault_tail.txt
 
+
+.tmp-release/
+.remedy-build/
+
