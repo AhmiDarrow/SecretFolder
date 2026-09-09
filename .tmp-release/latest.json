@@ -1,0 +1,19 @@
+{
+  "version": "0.1.3",
+  "notes": "## SecretFolder v0.1.3\n\nEncrypted folder vault for Windows — text, images, and small binaries behind a master password.\n\nHi I'm Ahmi, hope this helps!\n- Profile: https://github.com/AhmiDarrow\n- Repo: https://github.com/AhmiDarrow/SecretFolder\n\n### Install\n- Prefer the **NSIS setup** (`.exe`) for a normal Windows install (desktop shortcut + Start Menu + taskbar icon).\n- MSI is also attached when available.\n- Installed builds check **GitHub Releases** for signed updates (About → Check for updates).\n\n### Notes\n- Local-only vault under `%APPDATA%\\com.ahmi.secretfolder`\n- Master password + optional recovery key (shown once at setup)\n- No cloud, no account, no backdoor for vault data\n- Network use is limited to signed app updates\n\nSee [CHANGELOG.md](https://github.com/AhmiDarrow/SecretFolder/blob/main/CHANGELOG.md) and the README threat model.",
+  "pub_date": "2026-07-30T15:02:33.222Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUcVV2VUhiTVpJbHR3enJFTkd4bm5US2Y3UUhoOWgybzZ6c3FlNmx0dkZQVHA5bjdpbzV0dzZzOGhra0xWcERVc3JSMkdYNFNVbEFCMzRTdUNGeE5ZaEhweGE2TXo0Z1FJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1NDIzNzQ4CWZpbGU6U2VjcmV0Rm9sZGVyXzAuMS4zX3g2NC1zZXR1cC5leGUKZ2Q4Mmp4RElYeGRkRytYU1A3eEF0K20zcG5oMUl4UGQyWW5QbSswSW1IYXBHSjZTVnFMdEszdjA2bGtMRDVEVlJFckE5eWQ3T2NYYWVKVGFGZ1FoRFE9PQo=",
+      "url": "https://github.com/AhmiDarrow/SecretFolder/releases/download/v0.1.3/SecretFolder_0.1.3_x64-setup.exe"
+    },
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUcVV2VUhiTVpJbHR3enJFTkd4bm5US2Y3UUhoOWgybzZ6c3FlNmx0dkZQVHA5bjdpbzV0dzZzOGhra0xWcERVc3JSMkdYNFNVbEFCMzRTdUNGeE5ZaEhweGE2TXo0Z1FJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1NDIzNzQ4CWZpbGU6U2VjcmV0Rm9sZGVyXzAuMS4zX3g2NC1zZXR1cC5leGUKZ2Q4Mmp4RElYeGRkRytYU1A3eEF0K20zcG5oMUl4UGQyWW5QbSswSW1IYXBHSjZTVnFMdEszdjA2bGtMRDVEVlJFckE5eWQ3T2NYYWVKVGFGZ1FoRFE9PQo=",
+      "url": "https://github.com/AhmiDarrow/SecretFolder/releases/download/v0.1.3/SecretFolder_0.1.3_x64-setup.exe"
+    },
+    "windows-x86_64-msi": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUcVV2VUhiTVpJbHJMYU9MOWY0aXBrWmdRSmFWeXJKWkxZZWhoM09VVnFwMFVPVmhuOHhGT1NRamhFdHN5QXV1YTJ1dHV2NGFETHpxc1Mvc1dRYm1YQU5aQ0xmeThLNFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1NDIzNzQ4CWZpbGU6U2VjcmV0Rm9sZGVyXzAuMS4zX3g2NF9lbi1VUy5tc2kKdm9uMExEdjNHTjM5QWprQmRreSthV2crRG5CNG9TTkJZUUhHampJcDBoOVAzUm56Vm93enR5bnN2WXFXOGhCY1g5VW5PYkxNV2pWUlNlcEU0dzRSREE9PQo=",
+      "url": "https://github.com/AhmiDarrow/SecretFolder/releases/download/v0.1.3/SecretFolder_0.1.3_x64_en-US.msi"
+    }
+  }
+}
