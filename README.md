@@ -132,7 +132,7 @@ npm run build         # Vite production bundle only
 ## CI & releases
 
 - **CI** (`.github/workflows/ci.yml`) — on push/PR to `main`: frontend tests + Vite build, Rust fmt + tests (Windows).
-- **Release** (`.github/workflows/release.yml`) — on tag `v*` (or manual dispatch): test gate, then signed Tauri NSIS/MSI + updater `latest.json`, draft GitHub Release.
+- **Release** (`.github/workflows/release.yml`) — on tag `v*` (or manual dispatch): test gate, then signed Tauri NSIS/MSI + updater `latest.json`, published (non-draft) GitHub Release.
 
 ```bash
 # After bumping version in package.json, Cargo.toml, tauri.conf.json + CHANGELOG
