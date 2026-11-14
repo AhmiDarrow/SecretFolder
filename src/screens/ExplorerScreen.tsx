@@ -35,6 +35,8 @@ function pathFileName(p: string): string {
 
 /** MIME type for in-vault item drags (not OS files). */
 const VAULT_ITEM_MIME = "application/x-secretfolder-item";
+/** Matches the Settings input max (240 minutes). */
+const MAX_IDLE_LOCK_SECS = 240 * 60;
 
 type DropTarget =
   | { kind: "folder"; id: string; name: string }
@@ -373,12 +375,27 @@ export function ExplorerScreen({ status, onLocked }: Props) {
     importInFlight.current = true;
     setBusy(true);
     setError(null);
+    const parent = folderIdRef.current;
+    let imported = 0;
+    const errors: string[] = [];
     try {
-      const parent = folderIdRef.current;
       for (const f of files) {
-        await importOneFile(f, parent);
+        try {
+          await importOneFile(f, parent);
+          imported += 1;
+        } catch (e) {
+          errors.push(`${f.name}: ${formatError(e)}`);
+        }
       }
+      // Refresh even on partial failure so files that did import are shown.
       await refreshList();
+      if (errors.length) {
+        const head =
+          imported > 0
+            ? `Imported ${imported}, ${errors.length} failed. `
+            : "Import failed. ";
+        setError(head + errors.slice(0, 3).join(" · "));
+      }
     } catch (e) {
       setError(formatError(e));
     } finally {
@@ -938,7 +955,11 @@ export function ExplorerScreen({ status, onLocked }: Props) {
   async function saveIdle() {
     setSettingsMsg(null);
     try {
-      const secs = Math.max(60, Math.round(idleMins) * 60);
+      if (!Number.isFinite(idleMins) || idleMins < 1) {
+        setSettingsMsg("Idle lock must be at least 1 minute.");
+        return;
+      }
+      const secs = Math.min(MAX_IDLE_LOCK_SECS, Math.round(idleMins) * 60);
       await api.setIdleLockSecs(secs);
       setSettingsMsg(`Idle lock set to ${Math.round(secs / 60)} min.`);
     } catch (e) {
