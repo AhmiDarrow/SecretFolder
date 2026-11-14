@@ -5,6 +5,22 @@ All notable changes to SecretFolder are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] — 2026-11-14
+
+### Security
+- **Idle auto-lock now actually locks.** The explorer was pinging the idle timer every 30 seconds in the background, so the vault stayed unlocked indefinitely while the window was open. Only real keyboard, mouse, and scroll input now counts as activity
+- **Unlock lockout escalates as intended.** Repeated failed unlocks now step through 10s → 30s → 60s → 5-minute cooldowns (it previously stayed at 10s every time); a successful unlock resets it
+- Exports can no longer be saved into SecretFolder's own data folder, where decrypted copies would sit next to the vault (or overwrite `vault.json`)
+
+### Fixed
+- Saving text into a non-text item no longer overwrites the stored image/file content before reporting the error; an invalid new name is also rejected before anything is written
+- If saving the vault fails while deleting, the item and its contents are kept instead of the content being removed while the index still lists it
+- A failed save no longer leaves the unlocked session out of step with what is on disk (for example, a failed password change no longer makes the new password required until restart)
+- If first-run setup cannot write the vault, setup can be retried instead of the app reporting a vault that was never saved
+- The unlock rate limiter can no longer crash shortly after Windows boots, which made every later unlock attempt fail until restart
+- Importing several files where one fails now still imports and shows the rest, with a summary of what failed
+- The idle-lock setting rejects empty or invalid values instead of sending them to the vault
+
 ## [0.1.6] — 2026-08-11
 
 ### Changed
