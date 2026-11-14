@@ -331,7 +331,14 @@ impl Vault {
             last_activity: Instant::now(),
             has_recovery_key: true,
         });
-        self.persist()?;
+        if let Err(e) = self.persist() {
+            // Nothing reached disk: roll back so the app does not report an
+            // initialized vault (whose recovery key was never shown) and the
+            // user can retry setup.
+            self.session = None;
+            self.file = None;
+            return Err(e);
+        }
         Ok(recovery)
     }
 
@@ -497,10 +504,22 @@ impl Vault {
                 crypto::encrypt(&new_pw_key, b"secretfolder-ok", b"secretfolder-verifier")?;
             let password_wrapped =
                 crypto::encrypt(&new_pw_key, &content_key_bytes, b"secretfolder-pw-wrap")?;
-            file.header.verifier_b64 = B64.encode(verifier);
-            file.header.password_wrapped_key_b64 = Some(B64.encode(password_wrapped));
+            let old_verifier =
+                std::mem::replace(&mut file.header.verifier_b64, B64.encode(verifier));
+            let old_wrap = file
+                .header
+                .password_wrapped_key_b64
+                .replace(B64.encode(password_wrapped));
             // Recovery wrap stays the same (content key unchanged).
-            self.persist()?;
+            if let Err(e) = self.persist() {
+                // Save failed: keep the current password valid in memory too,
+                // matching what is still on disk.
+                if let Some(file) = self.file.as_mut() {
+                    file.header.verifier_b64 = old_verifier;
+                    file.header.password_wrapped_key_b64 = old_wrap;
+                }
+                return Err(e);
+            }
             self.touch();
             Ok(())
         })();
@@ -750,11 +769,15 @@ impl Vault {
             return Err(AppError::TooLarge(MAX_FILE_BYTES));
         }
 
+        // Validate everything before touching the blob on disk: a rejected
+        // update must never overwrite an image/binary payload with text.
+        let new_name = name.as_deref().map(sanitize_name).transpose()?;
         let data = body.into_bytes();
         {
             let s = self.session.as_ref().ok_or(AppError::Locked)?;
-            if !s.items.contains_key(id) {
-                return Err(AppError::NotFound);
+            let item = s.items.get(id).ok_or(AppError::NotFound)?;
+            if item.kind != ItemKind::Text {
+                return Err(AppError::Message("item is not a text file".into()));
             }
             self.write_blob(id, &s.key, &data)?;
         }
@@ -762,11 +785,8 @@ impl Vault {
         let preview = {
             let s = self.session.as_mut().ok_or(AppError::Locked)?;
             let item = s.items.get_mut(id).ok_or(AppError::NotFound)?;
-            if item.kind != ItemKind::Text {
-                return Err(AppError::Message("item is not a text file".into()));
-            }
-            if let Some(n) = name {
-                item.name = sanitize_name(&n)?;
+            if let Some(n) = new_name {
+                item.name = n;
             }
             item.size = data.len() as u64;
             item.mime = "text/plain".into();
@@ -825,17 +845,27 @@ impl Vault {
             }
             subtree
         };
-        {
+        let removed: Vec<(String, ItemPlain)> = {
             let s = self.session.as_mut().ok_or(AppError::Locked)?;
-            for del_id in &to_delete {
-                s.items.remove(del_id);
+            to_delete
+                .iter()
+                .filter_map(|del_id| s.items.remove_entry(del_id))
+                .collect()
+        };
+        // Commit the index first. Only once the new index is durable do we
+        // remove blobs — otherwise a failed save would leave the on-disk index
+        // pointing at payloads that no longer exist.
+        if let Err(e) = self.persist() {
+            if let Some(s) = self.session.as_mut() {
+                s.items.extend(removed);
             }
+            return Err(e);
         }
+        drop(removed);
         for del_id in &to_delete {
             let blob_path = self.blob_path(del_id);
             let _ = fs::remove_file(blob_path);
         }
-        self.persist()?;
         Ok(())
     }
 
@@ -927,12 +957,19 @@ impl Vault {
             });
         }
         items.sort_by(|a, b| a.id.cmp(&b.id));
-        file.items = items;
 
-        let json = serde_json::to_vec_pretty(file)
+        // Only adopt the new index in memory once it is durable on disk, so a
+        // failed save cannot desync the in-memory index (used by the next
+        // unlock) from what is actually stored.
+        let next = VaultFile {
+            header: file.header.clone(),
+            items,
+        };
+        let json = serde_json::to_vec_pretty(&next)
             .map_err(|e| AppError::Io(format!("serialize vault: {e}")))?;
         // Index is the source of truth for unlock — use bak + atomic replace.
         atomic_write_with_backup(&self.index_path, &json)?;
+        file.items = next.items;
         Ok(())
     }
 }
@@ -1693,6 +1730,69 @@ mod tests {
             .update_text(&item.id, None, "new body".into())
             .unwrap_err();
         assert!(err.to_string().contains("not a text"));
+        // Rejected update must not have clobbered the stored payload.
+        let (_, out) = v.export_bytes(&item.id).unwrap();
+        assert_eq!(out, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn update_text_invalid_name_leaves_body_untouched() {
+        let (_dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let item = v.create_text("a.txt", "original", None).unwrap();
+        assert!(v
+            .update_text(&item.id, Some("bad/name".into()), "changed".into())
+            .is_err());
+        let got = v.get_item(&item.id).unwrap();
+        assert_eq!(got.text.as_deref(), Some("original"));
+        assert_eq!(got.name, "a.txt");
+    }
+
+    #[test]
+    fn delete_failed_save_keeps_item_and_blob() {
+        let (dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let item = v.create_text("keep.txt", "still here", None).unwrap();
+        // Force the next index save to fail (temp path is a directory).
+        let tmp = dir.path().join("vault.json.tmp");
+        fs::create_dir(&tmp).unwrap();
+        assert!(v.delete_item(&item.id, false).is_err());
+        fs::remove_dir(&tmp).unwrap();
+
+        let got = v.get_item(&item.id).unwrap();
+        assert_eq!(got.text.as_deref(), Some("still here"));
+        v.lock();
+        v.unlock("password1234").unwrap();
+        let got = v.get_item(&item.id).unwrap();
+        assert_eq!(got.text.as_deref(), Some("still here"));
+    }
+
+    #[test]
+    fn change_password_failed_save_keeps_old_password() {
+        let (dir, mut v) = test_vault();
+        v.setup("password1234").unwrap();
+        let tmp = dir.path().join("vault.json.tmp");
+        fs::create_dir(&tmp).unwrap();
+        assert!(v
+            .change_password("password1234", "new-password-456")
+            .is_err());
+        fs::remove_dir(&tmp).unwrap();
+        v.lock();
+        assert!(v.unlock("new-password-456").is_err());
+        v.unlock("password1234").unwrap();
+    }
+
+    #[test]
+    fn setup_failed_save_can_retry() {
+        let (dir, mut v) = test_vault();
+        let tmp = dir.path().join("vault.json.tmp");
+        fs::create_dir(&tmp).unwrap();
+        assert!(v.setup("password1234").is_err());
+        assert!(!v.status().initialized);
+        assert!(!v.status().unlocked);
+        fs::remove_dir(&tmp).unwrap();
+        v.setup("password1234").unwrap();
+        assert!(v.status().initialized);
     }
 
     #[test]
