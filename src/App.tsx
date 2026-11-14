@@ -10,6 +10,9 @@ import "./App.css";
 
 type Screen = "loading" | "unlock" | "explorer";
 
+/** Minimum gap between activity pings sent to the backend idle timer. */
+const TOUCH_THROTTLE_MS = 5_000;
+
 /**
  * Recovery key is held at App level so UnlockScreen remounts / status refresh
  * cannot drop the one-time key before the user confirms they saved it.
@@ -87,17 +90,21 @@ export default function App() {
 
   useEffect(() => {
     if (screen !== "explorer") return;
+    // Only real user input counts as activity. A periodic timer here would
+    // keep the session alive forever and defeat idle auto-lock.
+    let lastTouch = 0;
     const onAct = () => {
+      const now = Date.now();
+      if (now - lastTouch < TOUCH_THROTTLE_MS) return;
+      lastTouch = now;
       void api.touch().catch(() => {
         /* locked */
       });
     };
     const evts = ["pointerdown", "keydown", "wheel"] as const;
     evts.forEach((e) => window.addEventListener(e, onAct));
-    const iv = window.setInterval(onAct, 30_000);
     return () => {
       evts.forEach((e) => window.removeEventListener(e, onAct));
-      window.clearInterval(iv);
     };
   }, [screen]);
 
