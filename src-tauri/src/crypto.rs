@@ -228,7 +228,7 @@ mod tests {
     fn decrypt_rejects_short_blob() {
         let key = MasterKey::from_bytes(random_array());
         assert!(decrypt(&key, b"short", b"aad").is_err());
-        assert!(decrypt(&key, &vec![0u8; NONCE_LEN + 15], b"aad").is_err());
+        assert!(decrypt(&key, &[0u8; NONCE_LEN + 15], b"aad").is_err());
     }
 
     #[test]
