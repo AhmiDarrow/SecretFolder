@@ -16,6 +16,8 @@ use crate::vault::{guess_mime, ItemDetail, ItemPreview, Vault, VaultStatus, MAX_
 pub struct UnlockThrottle {
     failures: Vec<Instant>,
     blocked_until: Option<Instant>,
+    /// Lockouts imposed since the last successful unlock (drives escalation).
+    strikes: usize,
 }
 
 impl UnlockThrottle {
@@ -27,16 +29,19 @@ impl UnlockThrottle {
         Self {
             failures: Vec::new(),
             blocked_until: None,
+            strikes: 0,
         }
     }
 
     /// Returns Ok if allowed, Err with wait-seconds message if blocked.
     pub fn check(&mut self) -> AppResult<()> {
-        // Prune expired entries from the window.
-        let cutoff = Instant::now()
-            .checked_sub(std::time::Duration::from_secs(Self::WINDOW_SECS))
-            .unwrap();
-        self.failures.retain(|t| *t > cutoff);
+        // Prune expired entries from the window. `checked_sub` can be None
+        // shortly after boot (monotonic clock origin) — keep everything then
+        // instead of panicking and poisoning the throttle mutex.
+        let window = std::time::Duration::from_secs(Self::WINDOW_SECS);
+        if let Some(cutoff) = Instant::now().checked_sub(window) {
+            self.failures.retain(|t| *t > cutoff);
+        }
 
         // Check if currently blocked.
         if let Some(until) = self.blocked_until {
@@ -51,15 +56,13 @@ impl UnlockThrottle {
         }
 
         if self.failures.len() >= Self::FAIL_THRESHOLD {
-            // Escalate: number of excess blocks determines cooldown tier.
-            let block_count = self.failures.len() / Self::FAIL_THRESHOLD;
-            let tier = (block_count - 1).min(Self::COOLDOWN_STEPS.len() - 1);
+            // Escalate: each lockout since the last success moves up a tier
+            // (failures are cleared per lockout, so they cannot drive this).
+            let tier = self.strikes.min(Self::COOLDOWN_STEPS.len() - 1);
+            self.strikes = self.strikes.saturating_add(1);
             let cooldown = Self::COOLDOWN_STEPS[tier];
-            self.blocked_until = Some(
-                Instant::now()
-                    .checked_add(std::time::Duration::from_secs(cooldown))
-                    .unwrap(),
-            );
+            self.blocked_until =
+                Instant::now().checked_add(std::time::Duration::from_secs(cooldown));
             self.failures.clear();
             return Err(AppError::Message(format!(
                 "too many unlock attempts — try again in {}s",
@@ -76,6 +79,7 @@ impl UnlockThrottle {
     pub fn record_success(&mut self) {
         self.failures.clear();
         self.blocked_until = None;
+        self.strikes = 0;
     }
 }
 
@@ -405,6 +409,11 @@ fn validate_import_path(path: &Path) -> AppResult<()> {
 /// Validate that an export path is within user home/data directories
 /// to prevent writing vault content to system locations.
 fn validate_export_path(path: &Path) -> AppResult<()> {
+    let vault_root = crate::vault::default_vault_root()?;
+    validate_export_path_with(path, &vault_root)
+}
+
+fn validate_export_path_with(path: &Path, vault_root: &Path) -> AppResult<()> {
     // If the path doesn't exist yet, resolve its parent
     let target = if path.exists() {
         path.to_path_buf()
@@ -417,6 +426,18 @@ fn validate_export_path(path: &Path) -> AppResult<()> {
     let canonical = target
         .canonicalize()
         .map_err(|_| AppError::Message("export path cannot be resolved".into()))?;
+
+    // Never write decrypted content into the vault's own data directory:
+    // it would sit there in plaintext and could overwrite vault.json / blobs.
+    let in_vault = match vault_root.canonicalize() {
+        Ok(root) => path_is_under(&canonical, &root),
+        Err(_) => path_is_under(&canonical, vault_root),
+    };
+    if in_vault {
+        return Err(AppError::Message(
+            "cannot export into the SecretFolder data folder — choose another location".into(),
+        ));
+    }
 
     if path_allowed_under_any(&canonical, &allowed_user_bases()) {
         return Ok(());
@@ -757,7 +778,63 @@ mod tests {
             t.record_failure();
         }
         let err2 = t.check().unwrap_err().to_string();
-        assert!(err2.contains("try again"), "msg: {err2}");
+        assert!(
+            err2.contains("in 30s"),
+            "second lockout should escalate: {err2}"
+        );
+
+        t.blocked_until = None;
+        for _ in 0..5 {
+            t.record_failure();
+        }
+        let err3 = t.check().unwrap_err().to_string();
+        assert!(
+            err3.contains("in 60s"),
+            "third lockout should escalate: {err3}"
+        );
+
+        // Success resets escalation.
+        t.record_success();
+        for _ in 0..5 {
+            t.record_failure();
+        }
+        let err4 = t.check().unwrap_err().to_string();
+        assert!(err4.contains("in 10s"), "reset after success: {err4}");
+    }
+
+    #[test]
+    fn unlock_throttle_cooldown_caps_at_max_tier() {
+        let mut t = UnlockThrottle::new();
+        let mut last = String::new();
+        for _ in 0..10 {
+            t.blocked_until = None;
+            for _ in 0..5 {
+                t.record_failure();
+            }
+            last = t.check().unwrap_err().to_string();
+        }
+        assert!(last.contains("in 300s"), "msg: {last}");
+    }
+
+    #[test]
+    fn validate_export_path_rejects_vault_data_dir() {
+        let home = tempdir().unwrap();
+        let vault_root = home.path().join("com.ahmi.secretfolder");
+        fs::create_dir_all(vault_root.join("blobs")).unwrap();
+        fs::write(vault_root.join("vault.json"), b"{}").unwrap();
+        for target in [
+            vault_root.join("vault.json"),
+            vault_root.join("exported.txt"),
+            vault_root.join("blobs").join("x.bin"),
+        ] {
+            let err = validate_export_path_with(&target, &vault_root)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("data folder"), "target={target:?} err={err}");
+        }
+        // A sibling folder next to the vault is still fine.
+        let ok = home.path().join("out.txt");
+        assert!(validate_export_path_with(&ok, &vault_root).is_ok());
     }
 
     #[test]
