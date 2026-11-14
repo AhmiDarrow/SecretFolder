@@ -33,6 +33,7 @@ const {
   mockImportPath,
   mockExportPath,
   mockChangePassword,
+  mockTouch,
 } = vi.hoisted(() => ({
   mockStatus: vi.fn(),
   mockListItems: vi.fn(),
@@ -51,6 +52,7 @@ const {
   mockImportPath: vi.fn(),
   mockExportPath: vi.fn(),
   mockChangePassword: vi.fn(),
+  mockTouch: vi.fn(),
 }));
 
 vi.mock("./api", () => ({
@@ -72,6 +74,7 @@ vi.mock("./api", () => ({
     importPath: (...args: unknown[]) => mockImportPath(...args),
     exportPath: (...args: unknown[]) => mockExportPath(...args),
     changePassword: (...args: unknown[]) => mockChangePassword(...args),
+    touch: (...args: unknown[]) => mockTouch(...args),
   },
 }));
 
@@ -172,5 +175,36 @@ describe("App routing", () => {
         "unlock:no",
       );
     });
+  });
+
+  it("does not keep the session alive without user input (idle lock)", async () => {
+    mockTouch.mockResolvedValue(undefined);
+    mockStatus.mockResolvedValue({
+      initialized: true,
+      unlocked: true,
+      itemCount: 0,
+      idleLockSecs: 900,
+      hasRecoveryKey: true,
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<App />);
+      await waitFor(() => {
+        expect(screen.getByTestId("explorer-screen")).toBeTruthy();
+      });
+      // Several minutes with no input must not ping the idle timer.
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(mockTouch).not.toHaveBeenCalled();
+
+      // Real input does, throttled.
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "b" }));
+      expect(mockTouch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(6_000);
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "c" }));
+      expect(mockTouch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
