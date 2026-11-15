@@ -9,7 +9,23 @@
   --border: #3f3f46;
   --note-bg: #ffe566;
   --note-text: #1a1508;
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "Yu Gothic UI",
+    Meiryo,
+    "Malgun Gothic",
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    "Noto Sans CJK JP",
+    "Noto Sans CJK KR",
+    "Noto Sans CJK SC",
+    "Noto Sans JP",
+    "Noto Sans KR",
+    "Noto Sans SC",
+    sans-serif;
   font-size: 14px;
   line-height: 1.45;
   color: var(--text);
@@ -19,6 +35,12 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+html:lang(ja),
+html:lang(ko),
+html:lang(zh-CN) {
+  line-height: 1.6;
 }
 
 * {
@@ -62,6 +84,8 @@ button {
   color: var(--text);
   border-radius: 8px;
   padding: 0.45rem 0.75rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 button:hover {
@@ -123,7 +147,8 @@ button.ghost {
 
 .boot-card,
 .gate-card {
-  width: min(380px, 100%);
+  width: min(440px, 100%);
+  overflow-wrap: anywhere;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -704,7 +729,7 @@ button.danger-solid:hover {
 
 .explorer-body {
   display: grid;
-  grid-template-columns: minmax(220px, 300px) 1fr;
+  grid-template-columns: minmax(240px, 340px) 1fr;
   gap: 0;
   flex: 1;
   min-height: 0;
@@ -897,7 +922,17 @@ button.danger-solid:hover {
   padding: 16px 18px;
   background: transparent;
   color: var(--text);
-  font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", Consolas, monospace;
+  font-family:
+    ui-monospace,
+    "Cascadia Code",
+    "Segoe UI Mono",
+    Consolas,
+    "Yu Gothic UI",
+    Meiryo,
+    "Malgun Gothic",
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    monospace;
   font-size: 13px;
   line-height: 1.55;
   outline: none;
@@ -941,10 +976,10 @@ button.danger-solid:hover {
   flex-direction: column;
   gap: 8px;
   max-width: 520px;
-  /* Fit in the window without an inner scroll region */
-  max-height: none;
-  overflow: visible;
-  flex-shrink: 0;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  overflow-wrap: anywhere;
 }
 
 .settings-panel h2 {
@@ -1080,7 +1115,17 @@ button.danger-solid:hover {
 }
 
 .recovery-key {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    "Yu Gothic UI",
+    Meiryo,
+    "Malgun Gothic",
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    monospace;
   font-size: 13px;
   color: var(--accent, #fbbf24);
   user-select: all;
@@ -1292,6 +1337,8 @@ button.btn.wide,
 
 .field input,
 .field textarea,
+.field select,
+.settings-panel select,
 input.search,
 input.name-input,
 textarea.editor {
@@ -1305,6 +1352,8 @@ textarea.editor {
 
 .field input:focus,
 .field textarea:focus,
+.field select:focus,
+.settings-panel select:focus,
 input.search:focus,
 input.name-input:focus,
 textarea.editor:focus {
@@ -1348,6 +1397,7 @@ textarea.editor:focus {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
@@ -1387,6 +1437,7 @@ textarea.editor:focus {
 .top-nav {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.25rem;
 }
 
@@ -1414,6 +1465,7 @@ textarea.editor:focus {
 .top-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.35rem;
 }
 
@@ -1488,7 +1540,8 @@ textarea.editor:focus {
   padding: 32px 24px;
   text-align: center;
   color: var(--muted);
-  max-width: 360px;
+  max-width: 28rem;
+  overflow-wrap: anywhere;
 }
 
 .detail-title {
@@ -1506,7 +1559,17 @@ textarea.editor {
   border-radius: 0;
   padding: 16px 18px;
   background: transparent;
-  font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", Consolas, monospace;
+  font-family:
+    ui-monospace,
+    "Cascadia Code",
+    "Segoe UI Mono",
+    Consolas,
+    "Yu Gothic UI",
+    Meiryo,
+    "Malgun Gothic",
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    monospace;
   font-size: 13px;
   line-height: 1.55;
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { resetI18nForTests } from "../i18n";
 import { ExplorerScreen } from "./ExplorerScreen";
 import type { VaultStatus } from "../types";
 
@@ -89,6 +90,7 @@ const sampleItem = {
 
 describe("ExplorerScreen", () => {
   beforeEach(() => {
+    resetI18nForTests();
     vi.clearAllMocks();
     cleanup();
     mockListItems.mockResolvedValue([sampleItem]);

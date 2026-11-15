@@ -1,7 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api } from "../api";
 import { copySecret } from "../clipboard";
-import { formatError } from "../errors";
+import { formatUserError } from "../errors";
+import { RichText } from "../i18n/RichText";
+import { useI18n } from "../i18n";
 import appMark from "../assets/app-mark.png";
 
 type Mode = "unlock" | "setup" | "recovery" | "show-recovery";
@@ -21,6 +23,7 @@ export function UnlockScreen({
   onRecoveryConfirmed,
   onUnlocked,
 }: Props) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<Mode>(() => {
     if (pendingRecoveryKey) return "show-recovery";
     return initialized ? "unlock" : "setup";
@@ -53,14 +56,14 @@ export function UnlockScreen({
     try {
       if (mode === "setup") {
         if (password.length < 12) {
-          throw new Error("Password must be at least 12 characters.");
+          throw new Error(t("unlock.pwShort"));
         }
         if (password !== password2) {
-          throw new Error("Passwords do not match.");
+          throw new Error(t("unlock.pwMismatch"));
         }
         const key = await api.setup(password);
         if (!key || !key.trim()) {
-          throw new Error("Setup succeeded but no recovery key was returned.");
+          throw new Error(t("unlock.noKey"));
         }
         setPassword("");
         setPassword2("");
@@ -81,7 +84,7 @@ export function UnlockScreen({
         onUnlocked();
       }
     } catch (err) {
-      setError(formatError(err));
+      setError(formatUserError(err));
     } finally {
       setBusy(false);
     }
@@ -95,13 +98,13 @@ export function UnlockScreen({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      setError(formatError(err));
+      setError(formatUserError(err));
     }
   }
 
   function finishRecovery() {
     if (!confirmedSave) {
-      setError("Confirm that you saved the recovery key before continuing.");
+      setError(t("unlock.confirmSaveError"));
       return;
     }
     onRecoveryConfirmed();
@@ -114,18 +117,16 @@ export function UnlockScreen({
           <div className="logo-mark" aria-hidden>
             <img src={appMark} alt="" width={44} height={44} draggable={false} />
           </div>
-          <h1>Save your recovery key</h1>
+          <h1>{t("recovery.title")}</h1>
           <p className="muted">
-            This is the <strong>only</strong> time SecretFolder will show this key. Store it
-            offline — it unlocks the vault if you forget the master password. Anyone with this
-            key can open your vault.
+            <RichText text={t("recovery.body")} />
           </p>
           <pre className="recovery" role="status">
             {displayedRecoveryKey || "..."}
           </pre>
           <div className="gate-actions">
             <button type="button" className="primary" onClick={() => void copyRecovery()}>
-              {copied ? "Copied" : "Copy recovery key"}
+              {copied ? t("recovery.copied") : t("recovery.copy")}
             </button>
           </div>
           <label className="check-row">
@@ -137,7 +138,7 @@ export function UnlockScreen({
                 setError(null);
               }}
             />
-            <span>I saved this recovery key somewhere safe</span>
+            <span>{t("recovery.savedCheck")}</span>
           </label>
           {error && <p className="error">{error}</p>}
           <button
@@ -147,11 +148,9 @@ export function UnlockScreen({
             onClick={finishRecovery}
             style={{ width: "100%", marginTop: "0.35rem" }}
           >
-            Continue to vault
+            {t("recovery.continue")}
           </button>
-          <p className="fineprint">
-            Protects data at rest on disk. Does not protect a fully compromised PC while unlocked.
-          </p>
+          <p className="fineprint">{t("recovery.fineprint")}</p>
         </div>
       </div>
     );
@@ -165,23 +164,23 @@ export function UnlockScreen({
         </div>
         <h1>
           {mode === "setup"
-            ? "Create your vault"
+            ? t("unlock.titleSetup")
             : mode === "recovery"
-              ? "Recovery unlock"
-              : "Unlock SecretFolder"}
+              ? t("unlock.titleRecovery")
+              : t("unlock.titleUnlock")}
         </h1>
         <p className="muted">
           {mode === "setup"
-            ? "Choose a strong master password. Files are encrypted on disk."
+            ? t("unlock.leadSetup")
             : mode === "recovery"
-              ? "Unlock with your recovery key."
-              : "Enter your master password to open your encrypted vault."}
+              ? t("unlock.leadRecovery")
+              : t("unlock.leadUnlock")}
         </p>
         <form onSubmit={(e) => void onSubmit(e)} className="gate-form">
           {mode !== "recovery" ? (
             <>
               <label>
-                Master password
+                {t("unlock.masterPassword")}
                 <input
                   type="password"
                   autoFocus
@@ -193,7 +192,7 @@ export function UnlockScreen({
               </label>
               {mode === "setup" && (
                 <label>
-                  Confirm password
+                  {t("unlock.confirmPassword")}
                   <input
                     type="password"
                     autoComplete="new-password"
@@ -206,7 +205,7 @@ export function UnlockScreen({
             </>
           ) : (
             <label>
-              Recovery key
+              {t("unlock.recoveryKey")}
               <input
                 type="text"
                 autoFocus
@@ -221,12 +220,12 @@ export function UnlockScreen({
           {error && <p className="error">{error}</p>}
           <button type="submit" className="primary" disabled={busy}>
             {busy
-              ? "Working…"
+              ? t("unlock.working")
               : mode === "setup"
-                ? "Create vault"
+                ? t("unlock.createVault")
                 : mode === "recovery"
-                  ? "Unlock with recovery key"
-                  : "Unlock"}
+                  ? t("unlock.unlockRecovery")
+                  : t("unlock.unlock")}
           </button>
         </form>
         {initialized && mode !== "setup" && (
@@ -240,7 +239,7 @@ export function UnlockScreen({
                   setError(null);
                 }}
               >
-                Use recovery key
+                {t("unlock.useRecovery")}
               </button>
             ) : (
               <button
@@ -251,12 +250,12 @@ export function UnlockScreen({
                   setError(null);
                 }}
               >
-                Use master password
+                {t("unlock.usePassword")}
               </button>
             )}
           </div>
         )}
-        <p className="fineprint">Local-only encrypted vault. No cloud sync. Signed app updates only.</p>
+        <p className="fineprint">{t("unlock.fineprint")}</p>
       </div>
     </div>
   );
