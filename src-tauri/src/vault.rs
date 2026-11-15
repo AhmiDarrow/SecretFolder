@@ -160,7 +160,6 @@ impl Drop for Session {
 }
 
 pub struct Vault {
-    #[allow(dead_code)]
     root: PathBuf,
     index_path: PathBuf,
     blobs_dir: PathBuf,
@@ -172,6 +171,10 @@ impl Vault {
     pub fn open_default() -> AppResult<Self> {
         let root = default_vault_root()?;
         Self::open_root(root)
+    }
+
+    pub fn data_root(&self) -> &Path {
+        &self.root
     }
 
     pub fn open_root(root: PathBuf) -> AppResult<Self> {
@@ -1012,10 +1015,30 @@ fn collect_subtree_ids(items: &HashMap<String, ItemPlain>, root_id: &str) -> Vec
     out
 }
 
-pub fn default_vault_root() -> AppResult<PathBuf> {
-    let base = dirs::data_dir().ok_or_else(|| AppError::Io("no data dir".into()))?;
-    // Separate from SecretSticky — never share vault/keys.
+/// `override_dir` wins when it is set and not blank. Otherwise join the
+/// platform data dir with the app id. `None, None` is an error.
+pub fn resolve_vault_root(
+    override_dir: Option<&str>,
+    data_dir: Option<&Path>,
+) -> AppResult<PathBuf> {
+    if let Some(raw) = override_dir {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+    let base = data_dir.ok_or_else(|| AppError::Io("no data dir".into()))?;
     Ok(base.join("com.ahmi.secretfolder"))
+}
+
+pub fn default_vault_root() -> AppResult<PathBuf> {
+    let from_env = std::env::var("SECRETFOLDER_DATA_DIR").ok();
+    let override_dir = from_env.as_deref().filter(|s| !s.trim().is_empty());
+    if override_dir.is_some() {
+        return resolve_vault_root(override_dir, None);
+    }
+    // Separate from SecretSticky — never share vault/keys.
+    resolve_vault_root(None, dirs::data_dir().as_deref())
 }
 
 fn sanitize_name(name: &str) -> AppResult<String> {
@@ -1701,6 +1724,16 @@ mod tests {
             "unexpected root: {s}"
         );
         assert!(!s.contains("secretsticky"));
+    }
+
+    #[test]
+    fn resolve_vault_root_override_and_fallback() {
+        let overridden = resolve_vault_root(Some(r"D:\isolated\sf"), None).unwrap();
+        assert_eq!(overridden, PathBuf::from(r"D:\isolated\sf"));
+        let base = PathBuf::from(r"C:\AppData");
+        let fallback = resolve_vault_root(Some("  "), Some(&base)).unwrap();
+        assert_eq!(fallback, base.join("com.ahmi.secretfolder"));
+        assert!(resolve_vault_root(None, None).is_err());
     }
 
     // ── Edge-case coverage ─────────────────────────────────────────────────
