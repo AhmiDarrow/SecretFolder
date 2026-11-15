@@ -12,7 +12,20 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { save } from "@tauri-apps/plugin-dialog";
 import { api, fileToBase64 } from "../api";
 import { copySecret } from "../clipboard";
-import { formatError } from "../errors";
+import { formatUserError } from "../errors";
+import {
+  formatBytes,
+  formatDateTime,
+  formatNumber,
+  getLocale,
+  isLocaleId,
+  LOCALES,
+  LOCALE_NATIVE_NAMES,
+  setLocale,
+  translate,
+  useI18n,
+} from "../i18n";
+import { RichText } from "../i18n/RichText";
 import type { ItemDetail, ItemPreview, VaultStatus } from "../types";
 import { MAX_FILE_BYTES } from "../types";
 import {
@@ -52,7 +65,7 @@ function dropTargetAtPoint(clientX: number, clientY: number): DropTarget {
     return {
       kind: "folder",
       id: folderEl.dataset.dropFolderId,
-      name: folderEl.dataset.dropFolderName || "folder",
+      name: folderEl.dataset.dropFolderName || translate(getLocale(), "files.kindFolder"),
     };
   }
   if (el.closest("[data-drop-parent]")) {
@@ -74,12 +87,6 @@ interface Props {
 
 type Panel = "files" | "settings" | "about";
 
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function kindIcon(kind: ItemPreview["kind"]): string {
   switch (kind) {
     case "folder":
@@ -93,7 +100,35 @@ function kindIcon(kind: ItemPreview["kind"]): string {
   }
 }
 
+function kindLabelKey(kind: string): string {
+  if (kind === "text") return "files.kindText";
+  if (kind === "image") return "files.kindImage";
+  if (kind === "folder") return "files.kindFolder";
+  return "files.kindBinary";
+}
+
+/** Partial failure heads include the period; the caller adds a space and details. */
+function partialError(
+  okKey: string,
+  failKey: string,
+  okField: "imported" | "moved" | "deleted",
+  ok: number,
+  failed: number,
+  details: string[],
+): string {
+  const id = getLocale();
+  const head =
+    ok > 0
+      ? translate(id, okKey, {
+          [okField]: formatNumber(id, ok),
+          failed: formatNumber(id, failed),
+        })
+      : translate(id, failKey);
+  return `${head} ${details.slice(0, 3).join(" · ")}`;
+}
+
 export function ExplorerScreen({ status, onLocked }: Props) {
+  const { locale, t, plural } = useI18n();
   const [panel, setPanel] = useState<Panel>("files");
   const [items, setItems] = useState<ItemPreview[]>([]);
   const [folderId, setFolderId] = useState<string | null>(null);
@@ -127,7 +162,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
   } | null>(null);
   const [nameDialog, setNameDialog] = useState<{
     mode: "folder" | "rename";
-    title: string;
+    titleKey: "dialog.newFolderTitle" | "dialog.renameTitle";
     value: string;
     itemId?: string;
   } | null>(null);
@@ -157,6 +192,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
 
   const [version, setVersion] = useState("…");
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+  const [updateTone, setUpdateTone] = useState<"ok" | "muted">("muted");
   const [updateBusy, setUpdateBusy] = useState(false);
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
 
@@ -217,7 +253,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
 
   useEffect(() => {
     void refreshList().catch((e) =>
-      setError(formatError(e)),
+      setError(formatUserError(e)),
     );
   }, [refreshList]);
 
@@ -261,7 +297,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
         setEditBody(d.text ?? "");
         setDirty(false);
       } catch (e) {
-        if (!cancelled) setError(formatError(e));
+        if (!cancelled) setError(formatUserError(e));
       }
     })();
     return () => {
@@ -335,11 +371,11 @@ export function ExplorerScreen({ status, onLocked }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const item = await api.createText("Untitled.txt", "", folderId);
+      const item = await api.createText(t("files.defaultTextName"), "", folderId);
       await refreshList();
       setSelectedId(item.id);
     } catch (e) {
-      setError(formatError(e));
+      setError(formatUserError(e));
     } finally {
       setBusy(false);
     }
@@ -348,14 +384,18 @@ export function ExplorerScreen({ status, onLocked }: Props) {
   function onNewFolder() {
     setNameDialog({
       mode: "folder",
-      title: "New folder",
-      value: "New folder",
+      titleKey: "dialog.newFolderTitle",
+      value: t("files.defaultFolderName"),
     });
   }
   async function importOneFile(file: File, parentId: string | null) {
     if (file.size > MAX_FILE_BYTES) {
+      const id = getLocale();
       throw new Error(
-        `"${file.name}" is larger than ${formatBytes(MAX_FILE_BYTES)}`,
+        translate(id, "files.tooLarge", {
+          name: file.name,
+          size: formatBytes(id, MAX_FILE_BYTES),
+        }),
       );
     }
     const dataB64 = await fileToBase64(file);
@@ -384,20 +424,25 @@ export function ExplorerScreen({ status, onLocked }: Props) {
           await importOneFile(f, parent);
           imported += 1;
         } catch (e) {
-          errors.push(`${f.name}: ${formatError(e)}`);
+          errors.push(`${f.name}: ${formatUserError(e)}`);
         }
       }
       // Refresh even on partial failure so files that did import are shown.
       await refreshList();
       if (errors.length) {
-        const head =
-          imported > 0
-            ? `Imported ${imported}, ${errors.length} failed. `
-            : "Import failed. ";
-        setError(head + errors.slice(0, 3).join(" · "));
+        setError(
+          partialError(
+            "files.importedPartial",
+            "files.importFailed",
+            "imported",
+            imported,
+            errors.length,
+            errors,
+          ),
+        );
       }
     } catch (e) {
-      setError(formatError(e));
+      setError(formatUserError(e));
     } finally {
       setBusy(false);
       importInFlight.current = false;
@@ -440,20 +485,25 @@ export function ExplorerScreen({ status, onLocked }: Props) {
             await api.importPath(p, pathFileName(p), parentId);
             imported += 1;
           } catch (e) {
-            const msg = formatError(e);
+            const msg = formatUserError(e);
             errors.push(`${pathFileName(p)}: ${msg}`);
           }
         }
         await refreshList();
         if (errors.length) {
-          const head =
-            imported > 0
-              ? `Imported ${imported}, ${errors.length} failed. `
-              : "Import failed. ";
-          setError(head + errors.slice(0, 3).join(" · "));
+          setError(
+            partialError(
+              "files.importedPartial",
+              "files.importFailed",
+              "imported",
+              imported,
+              errors.length,
+              errors,
+            ),
+          );
         }
       } catch (e) {
-        setError(formatError(e));
+        setError(formatUserError(e));
       } finally {
         setBusy(false);
         importInFlight.current = false;
@@ -536,7 +586,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
           await api.moveItem(id, parentId);
           moved += 1;
         } catch (e) {
-          const msg = formatError(e);
+          const msg = formatUserError(e);
           errors.push(msg);
         }
       }
@@ -551,14 +601,19 @@ export function ExplorerScreen({ status, onLocked }: Props) {
       });
       await refreshList();
       if (errors.length) {
-        const head =
-          moved > 0
-            ? `Moved ${moved}, ${errors.length} failed. `
-            : "Move failed. ";
-        setError(head + errors.slice(0, 3).join(" · "));
+        setError(
+          partialError(
+            "files.movedPartial",
+            "files.moveFailed",
+            "moved",
+            moved,
+            errors.length,
+            errors,
+          ),
+        );
       }
     } catch (e) {
-      setError(formatError(e));
+      setError(formatUserError(e));
     } finally {
       setBusy(false);
       moveInFlight.current = false;
@@ -661,9 +716,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
 
   function confirmLeaveIfDirty(): boolean {
     if (!dirty) return true;
-    return window.confirm(
-      "You have unsaved text changes. Leave without saving?",
-    );
+    return window.confirm(t("files.unsavedConfirm"));
   }
 
   function openItemGuarded(item: ItemPreview) {
@@ -750,7 +803,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
       setEditName(d.name);
       setEditBody(d.text ?? "");
     } catch (e) {
-      setError(formatError(e));
+      setError(formatUserError(e));
     } finally {
       setBusy(false);
     }
@@ -760,7 +813,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
     if (!detail) return;
     setNameDialog({
       mode: "rename",
-      title: "Rename",
+      titleKey: "dialog.renameTitle",
       value: detail.name,
       itemId: detail.id,
     });
@@ -792,7 +845,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
         setDetail(d);
       }
     } catch (e) {
-      setError(formatError(e));
+      setError(formatUserError(e));
     } finally {
       setBusy(false);
     }
@@ -844,7 +897,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
       }
       setPendingDelete({ items: prepared });
     } catch (e) {
-      setError(formatError(e));
+      setError(formatUserError(e));
     } finally {
       setBusy(false);
     }
@@ -867,7 +920,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
           deleted += 1;
           if (folderId === item.id) leftCurrentFolder = true;
         } catch (e) {
-          const msg = formatError(e);
+          const msg = formatUserError(e);
           errors.push(`${item.name}: ${msg}`);
         }
       }
@@ -891,14 +944,19 @@ export function ExplorerScreen({ status, onLocked }: Props) {
       }
       await refreshList();
       if (errors.length) {
-        const head =
-          deleted > 0
-            ? `Deleted ${deleted}, ${errors.length} failed. `
-            : "Delete failed. ";
-        setError(head + errors.slice(0, 3).join(" · "));
+        setError(
+          partialError(
+            "files.deletedPartial",
+            "files.deleteFailed",
+            "deleted",
+            deleted,
+            errors.length,
+            errors,
+          ),
+        );
       }
     } catch (e) {
-      setError(formatError(e));
+      setError(formatUserError(e));
     } finally {
       setBusy(false);
     }
@@ -912,12 +970,12 @@ export function ExplorerScreen({ status, onLocked }: Props) {
       const defaultName = detail.name || "export.bin";
       const dest = await save({
         defaultPath: defaultName,
-        title: "Export from SecretFolder",
+        title: t("files.exportDialog"),
       });
       if (dest === null) return; // user cancelled
       await api.exportPath(detail.id, dest);
     } catch (e) {
-      setError(formatError(e));
+      setError(formatUserError(e));
     } finally {
       setBusy(false);
     }
@@ -929,7 +987,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
       const res = await copySecret(editBody);
       if (!res.ok) throw new Error(res.error ?? "copy failed");
     } catch (e) {
-      setError(formatError(e));
+      setError(formatUserError(e));
     }
   }
 
@@ -956,25 +1014,29 @@ export function ExplorerScreen({ status, onLocked }: Props) {
     setSettingsMsg(null);
     try {
       if (!Number.isFinite(idleMins) || idleMins < 1) {
-        setSettingsMsg("Idle lock must be at least 1 minute.");
+        setSettingsMsg(t("settings.idleMin"));
         return;
       }
       const secs = Math.min(MAX_IDLE_LOCK_SECS, Math.round(idleMins) * 60);
       await api.setIdleLockSecs(secs);
-      setSettingsMsg(`Idle lock set to ${Math.round(secs / 60)} min.`);
+      setSettingsMsg(
+        t("settings.idleSet", {
+          count: formatNumber(locale, Math.round(secs / 60)),
+        }),
+      );
     } catch (e) {
-      setSettingsMsg(formatError(e));
+      setSettingsMsg(formatUserError(e));
     }
   }
 
   async function savePassword() {
     setSettingsMsg(null);
     if (newPw.length < 12) {
-      setSettingsMsg("New password must be at least 12 characters.");
+      setSettingsMsg(t("settings.pwShort"));
       return;
     }
     if (newPw !== newPw2) {
-      setSettingsMsg("New passwords do not match.");
+      setSettingsMsg(t("settings.pwMismatch"));
       return;
     }
     try {
@@ -982,9 +1044,9 @@ export function ExplorerScreen({ status, onLocked }: Props) {
       setCurPw("");
       setNewPw("");
       setNewPw2("");
-      setSettingsMsg("Password changed.");
+      setSettingsMsg(t("settings.pwChanged"));
     } catch (e) {
-      setSettingsMsg(formatError(e));
+      setSettingsMsg(formatUserError(e));
     }
   }
 
@@ -992,26 +1054,32 @@ export function ExplorerScreen({ status, onLocked }: Props) {
     try {
       await api.openExternal(url);
     } catch (e) {
-      setUpdateMsg(formatError(e));
+      setUpdateTone("muted");
+      setUpdateMsg(formatUserError(e));
     }
   }
 
   async function onCheckUpdate() {
     setUpdateBusy(true);
-    setUpdateMsg("Checking…");
+    setUpdateTone("muted");
+    setUpdateMsg(t("about.checking"));
     setPendingVersion(null);
     try {
       const res = await checkForAppUpdate();
       if (res.kind === "up-to-date") {
-        setUpdateMsg(`You're on the latest version (${version}).`);
+        setUpdateTone("ok");
+        setUpdateMsg(t("about.latest", { version }));
       } else if (res.kind === "available") {
         setPendingVersion(res.version);
-        setUpdateMsg(`Update ${res.version} is ready to install.`);
+        setUpdateTone("ok");
+        setUpdateMsg(t("about.available", { version: res.version }));
       } else {
+        setUpdateTone("muted");
         setUpdateMsg(res.message);
       }
     } catch (e) {
-      setUpdateMsg(formatError(e));
+      setUpdateTone("muted");
+      setUpdateMsg(formatUserError(e));
     } finally {
       setUpdateBusy(false);
     }
@@ -1019,26 +1087,40 @@ export function ExplorerScreen({ status, onLocked }: Props) {
 
   async function onInstallUpdate() {
     setUpdateBusy(true);
-    setUpdateMsg("Downloading update…");
+    setUpdateTone("muted");
+    setUpdateMsg(t("about.downloading"));
     try {
       const ok = await downloadAndInstallUpdate((pct) => {
+        const id = getLocale();
         if (pct == null) {
-          setUpdateMsg("Downloading update…");
+          setUpdateMsg(translate(id, "about.downloading"));
         } else {
-          setUpdateMsg(`Downloading update… ${pct}%`);
+          setUpdateMsg(
+            translate(id, "about.downloadingPct", {
+              percent: formatNumber(id, pct),
+            }),
+          );
         }
       });
       if (!ok) {
-        setUpdateMsg(`You're on the latest version (${version}).`);
+        setUpdateTone("ok");
+        setUpdateMsg(t("about.latest", { version }));
         setPendingVersion(null);
       }
       // relaunch() exits the process on success
     } catch (e) {
-      setUpdateMsg(formatError(e));
+      setUpdateTone("muted");
+      setUpdateMsg(formatUserError(e));
     } finally {
       setUpdateBusy(false);
     }
   }
+
+  function updatedStamp(iso: string | null | undefined): string | null {
+    const when = formatDateTime(locale, iso);
+    return when ? t("files.updated", { when }) : null;
+  }
+
   return (
     <div className="explorer">
       <header className="explorer-top">
@@ -1047,9 +1129,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
             <img src={appMark} alt="" width={28} height={28} draggable={false} />
           </span>
           <strong>SecretFolder</strong>
-          <span className="muted small">
-            {status.itemCount} item{status.itemCount === 1 ? "" : "s"}
-          </span>
+          <span className="muted small">{plural("items", status.itemCount)}</span>
         </div>
         <nav className="top-nav">
           <button
@@ -1057,33 +1137,33 @@ export function ExplorerScreen({ status, onLocked }: Props) {
             className={panel === "files" ? "tab active" : "tab"}
             onClick={() => setPanel("files")}
           >
-            Files
+            {t("nav.files")}
           </button>
           <button
             type="button"
             className={panel === "settings" ? "tab active" : "tab"}
             onClick={() => setPanel("settings")}
           >
-            Settings
+            {t("nav.settings")}
           </button>
           <button
             type="button"
             className={panel === "about" ? "tab active" : "tab"}
             onClick={() => setPanel("about")}
           >
-            About
+            {t("nav.about")}
           </button>
         </nav>
         <div className="top-actions">
           <button type="button" className="btn ghost" onClick={() => void lockNow()}>
-            Lock
+            {t("nav.lock")}
           </button>
           <button
             type="button"
             className="btn ghost"
             onClick={() => void api.hideMain()}
           >
-            Hide
+            {t("nav.hide")}
           </button>
         </div>
       </header>
@@ -1092,7 +1172,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
         <div className="banner error" role="alert">
           {error}
           <button type="button" className="linkish" onClick={() => setError(null)}>
-            dismiss
+            {t("nav.dismiss")}
           </button>
         </div>
       )}
@@ -1109,7 +1189,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
             <div className="list-toolbar">
               <input
                 className="search"
-                placeholder="Search this folder…"
+                placeholder={t("files.search")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -1120,7 +1200,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                   disabled={busy}
                   onClick={() => void onNewText()}
                 >
-                  New text
+                  {t("files.newText")}
                 </button>
                 <button
                   type="button"
@@ -1128,7 +1208,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                   disabled={busy}
                   onClick={() => void onNewFolder()}
                 >
-                  New folder
+                  {t("files.newFolder")}
                 </button>
                 <button
                   type="button"
@@ -1136,7 +1216,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                   disabled={busy}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  Import…
+                  {t("files.import")}
                 </button>
                 <input
                   ref={fileInputRef}
@@ -1150,7 +1230,9 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                 {selectedCount > 0 ? (
                   <>
                     <span className="muted small selection-count">
-                      {selectedCount} selected
+                      {t("files.selected", {
+                        count: formatNumber(locale, selectedCount),
+                      })}
                     </span>
                     <button
                       type="button"
@@ -1158,7 +1240,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                       disabled={busy}
                       onClick={() => void onDelete()}
                     >
-                      Delete
+                      {t("files.delete")}
                     </button>
                     <button
                       type="button"
@@ -1166,27 +1248,23 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                       disabled={busy}
                       onClick={() => clearSelection()}
                     >
-                      Clear
+                      {t("files.clear")}
                     </button>
-                    <span className="muted small">
-                      Ctrl+click · Shift+click · drag onto folder or ..
-                    </span>
+                    <span className="muted small">{t("files.multiHint")}</span>
                   </>
                 ) : (
-                  <span className="muted small">
-                    Click to select · double-click to open · Ctrl/Shift multi-select
-                  </span>
+                  <span className="muted small">{t("files.selectHint")}</span>
                 )}
               </div>
             </div>
 
-            <nav className="breadcrumbs" aria-label="Folder path">
+            <nav className="breadcrumbs" aria-label={t("files.pathLabel")}>
               <button
                 type="button"
                 className={!folderId ? "crumb active" : "crumb"}
                 onClick={() => goCrumb(null)}
               >
-                Vault
+                {t("files.vault")}
               </button>
               {crumbs.map((c) => (
                 <span key={c.id} className="crumb-seg">
@@ -1204,10 +1282,10 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                 <button
                   type="button"
                   className="btn sm ghost crumb-up"
-                  title="Go up one level"
+                  title={t("files.upTitle")}
                   onClick={() => goUpOneLevel()}
                 >
-                  ↑ Up
+                  {t("files.up")}
                 </button>
               )}
             </nav>
@@ -1220,7 +1298,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
               }
               role="listbox"
               aria-multiselectable="true"
-              aria-label="Vault items"
+              aria-label={t("files.listLabel")}
               tabIndex={0}
               onKeyDown={(e) => {
                 const tag = (e.target as HTMLElement | null)?.tagName;
@@ -1286,7 +1364,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                   onDragOver={(e) => onVaultDragOverTarget(e, { kind: "parent" })}
                   onDrop={(e) => onVaultDropOnTarget(e, { kind: "parent" })}
                   onClick={() => goUpGuarded()}
-                  title="Go to parent folder — drop items here to move up"
+                  title={t("files.parentTitle")}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
@@ -1303,15 +1381,15 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                     <span className="file-meta">
                       <span className="file-name">..</span>
                       <span className="muted small">
-                        Parent folder
-                        {crumbs.length
-                          ? ` · ${
-                              crumbs.length === 1
-                                ? "Vault"
-                                : crumbs[crumbs.length - 2]?.name
-                            }`
-                          : ""}
-                        {" · drop here to move up"}
+                        {t("files.parentMeta", {
+                          extra: crumbs.length
+                            ? ` · ${
+                                crumbs.length === 1
+                                  ? t("files.vault")
+                                  : (crumbs[crumbs.length - 2]?.name ?? "")
+                              }`
+                            : "",
+                        })}
                       </span>
                     </span>
                   </div>
@@ -1319,20 +1397,18 @@ export function ExplorerScreen({ status, onLocked }: Props) {
               )}
               {filtered.length === 0 && !folderId && (
                 <li className="empty muted">
-                  {osDragOver
-                    ? "Drop files to import…"
-                    : "Empty folder — drop files here or use Import."}
+                  {osDragOver ? t("files.dropImport") : t("files.emptyRoot")}
                 </li>
               )}
               {filtered.length === 0 && folderId && (
                 <li className="empty muted">
                   {osDragOver
                     ? dropHighlight?.kind === "folder"
-                      ? `Drop into ${dropHighlight.name}…`
+                      ? t("files.dropInto", { name: dropHighlight.name })
                       : dropHighlight?.kind === "parent"
-                        ? "Drop to move/import to parent…"
-                        : "Drop files to import…"
-                    : "Empty — drop files here, or drag items onto .. to move up."}
+                        ? t("files.dropParent")
+                        : t("files.dropImport")
+                    : t("files.emptyChild")}
                 </li>
               )}
               {filtered.map((item) => {
@@ -1430,8 +1506,11 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                         <span className="file-name">{item.name}</span>
                         <span className="muted small">
                           {item.kind === "folder"
-                            ? "Folder · double-click or Open · drop to move/import"
-                            : `${item.kind} · ${formatBytes(item.size)}`}
+                            ? t("files.folderMeta")
+                            : t("files.fileMeta", {
+                                kind: t(kindLabelKey(item.kind)),
+                                size: formatBytes(locale, item.size),
+                              })}
                         </span>
                       </span>
                       <span className="row-actions">
@@ -1440,8 +1519,8 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                             type="button"
                             className="btn ghost sm row-action-btn"
                             disabled={busy}
-                            title={`Open folder ${item.name}`}
-                            aria-label={`Open folder ${item.name}`}
+                            title={t("files.openFolderTitle", { name: item.name })}
+                            aria-label={t("files.openFolderTitle", { name: item.name })}
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -1450,7 +1529,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                             onPointerDown={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
                           >
-                            Open
+                            {t("files.open")}
                           </button>
                         )}
                         <button
@@ -1459,13 +1538,13 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                           disabled={busy}
                           title={
                             item.kind === "folder"
-                              ? "Remove folder"
-                              : "Remove item"
+                              ? t("files.removeFolderTitle")
+                              : t("files.removeItemTitle")
                           }
                           aria-label={
                             item.kind === "folder"
-                              ? `Remove folder ${item.name}`
-                              : `Remove ${item.name}`
+                              ? t("files.removeFolderAria", { name: item.name })
+                              : t("files.removeItemAria", { name: item.name })
                           }
                           onClick={(e) => {
                             e.preventDefault();
@@ -1475,7 +1554,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                           onPointerDown={(e) => e.stopPropagation()}
                           onMouseDown={(e) => e.stopPropagation()}
                         >
-                          Remove
+                          {t("files.remove")}
                         </button>
                       </span>
                     </div>
@@ -1485,18 +1564,21 @@ export function ExplorerScreen({ status, onLocked }: Props) {
             </ul>
             {osDragOver && dropHighlight?.kind === "current" && (
               <div className="drop-overlay" aria-hidden>
-                Drop to import into{" "}
-                {crumbs.length ? crumbs[crumbs.length - 1].name : "Vault"}
+                {t("files.dropImportInto", {
+                  name: crumbs.length
+                    ? crumbs[crumbs.length - 1].name
+                    : t("files.vault"),
+                })}
               </div>
             )}
             {osDragOver && dropHighlight?.kind === "folder" && (
               <div className="drop-overlay" aria-hidden>
-                Drop to import into {dropHighlight.name}
+                {t("files.dropImportInto", { name: dropHighlight.name })}
               </div>
             )}
             {osDragOver && dropHighlight?.kind === "parent" && (
               <div className="drop-overlay" aria-hidden>
-                Drop to import into parent folder
+                {t("files.dropImportParent")}
               </div>
             )}
           </aside>
@@ -1506,14 +1588,10 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                 <p>
                   {selectedId &&
                   items.find((i) => i.id === selectedId)?.kind === "folder"
-                    ? "Folder selected — double-click or press Open to enter."
-                    : "Select a file to view or edit."}
+                    ? t("files.folderSelected")
+                    : t("files.selectFile")}
                 </p>
-                <p className="small">
-                  Click selects · double-click opens · Ctrl/Shift multi-select.
-                  Drop OS files onto the list or a folder row to import. Drag
-                  vault items onto a folder or <strong>..</strong> to move them.
-                </p>
+                <p className="small">{t("files.detailHelp")}</p>
               </div>
             )}
 
@@ -1535,28 +1613,28 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                       disabled={busy || !dirty}
                       onClick={() => void onSaveText()}
                     >
-                      Save
+                      {t("files.save")}
                     </button>
                     <button
                       type="button"
                       className="btn sm"
                       onClick={() => void onCopyText()}
                     >
-                      Copy
+                      {t("files.copy")}
                     </button>
                     <button
                       type="button"
                       className="btn sm"
                       onClick={() => void onExport()}
                     >
-                      Export
+                      {t("files.export")}
                     </button>
                     <button
                       type="button"
                       className="btn danger sm"
                       onClick={() => void onDelete()}
                     >
-                      Delete
+                      {t("files.delete")}
                     </button>
                   </div>
                 </div>
@@ -1569,6 +1647,9 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                   }}
                   spellCheck={false}
                 />
+                {updatedStamp(detail.updatedAt) && (
+                  <p className="muted small">{updatedStamp(detail.updatedAt)}</p>
+                )}
               </div>
             )}
 
@@ -1582,21 +1663,21 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                       className="btn sm"
                       onClick={() => void onRename()}
                     >
-                      Rename
+                      {t("files.rename")}
                     </button>
                     <button
                       type="button"
                       className="btn sm"
                       onClick={() => void onExport()}
                     >
-                      Export
+                      {t("files.export")}
                     </button>
                     <button
                       type="button"
                       className="btn danger sm"
                       onClick={() => void onDelete()}
                     >
-                      Delete
+                      {t("files.delete")}
                     </button>
                   </div>
                 </div>
@@ -1607,11 +1688,14 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                     alt={detail.name}
                   />
                 ) : (
-                  <p className="muted">No preview</p>
+                  <p className="muted">{t("files.noPreview")}</p>
                 )}
                 <p className="muted small">
-                  {detail.mime} · {formatBytes(detail.size)}
+                  {detail.mime} · {formatBytes(locale, detail.size)}
                 </p>
+                {updatedStamp(detail.updatedAt) && (
+                  <p className="muted small">{updatedStamp(detail.updatedAt)}</p>
+                )}
               </div>
             )}
 
@@ -1625,30 +1709,31 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                       className="btn sm"
                       onClick={() => void onRename()}
                     >
-                      Rename
+                      {t("files.rename")}
                     </button>
                     <button
                       type="button"
                       className="btn sm"
                       onClick={() => void onExport()}
                     >
-                      Export
+                      {t("files.export")}
                     </button>
                     <button
                       type="button"
                       className="btn danger sm"
                       onClick={() => void onDelete()}
                     >
-                      Delete
+                      {t("files.delete")}
                     </button>
                   </div>
                 </div>
-                <p className="muted">
-                  Binary file — export to open with another app.
-                </p>
+                <p className="muted">{t("files.binaryHint")}</p>
                 <p className="muted small">
-                  {detail.mime} · {formatBytes(detail.size)}
+                  {detail.mime} · {formatBytes(locale, detail.size)}
                 </p>
+                {updatedStamp(detail.updatedAt) && (
+                  <p className="muted small">{updatedStamp(detail.updatedAt)}</p>
+                )}
               </div>
             )}
           </main>
@@ -1657,9 +1742,25 @@ export function ExplorerScreen({ status, onLocked }: Props) {
 
       {panel === "settings" && (
         <div className="settings-panel card">
-          <h2>Settings</h2>
+          <h2>{t("settings.title")}</h2>
           <label className="field">
-            <span>Idle lock (minutes)</span>
+            <span>{t("settings.language")}</span>
+            <select
+              value={locale}
+              onChange={(e) => {
+                if (isLocaleId(e.target.value)) setLocale(e.target.value);
+              }}
+            >
+              {LOCALES.map((id) => (
+                <option key={id} value={id}>
+                  {LOCALE_NATIVE_NAMES[id]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="muted small">{t("settings.languageHelp")}</p>
+          <label className="field">
+            <span>{t("settings.idle")}</span>
             <div className="row gap">
               <input
                 type="number"
@@ -1669,17 +1770,15 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                 onChange={(e) => setIdleMins(Number(e.target.value))}
               />
               <button type="button" className="btn sm" onClick={() => void saveIdle()}>
-                Save
+                {t("settings.save")}
               </button>
             </div>
           </label>
-          <p className="muted small">
-            Default is 15 minutes of inactivity. Set and save to change.
-          </p>
+          <p className="muted small">{t("settings.idleHelp")}</p>
 
-          <h3>Change master password</h3>
+          <h3>{t("settings.changePw")}</h3>
           <label className="field">
-            <span>Current password</span>
+            <span>{t("settings.currentPw")}</span>
             <input
               type="password"
               value={curPw}
@@ -1687,7 +1786,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
             />
           </label>
           <label className="field">
-            <span>New password</span>
+            <span>{t("settings.newPw")}</span>
             <input
               type="password"
               value={newPw}
@@ -1695,7 +1794,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
             />
           </label>
           <label className="field">
-            <span>Confirm new password</span>
+            <span>{t("settings.confirmPw")}</span>
             <input
               type="password"
               value={newPw2}
@@ -1703,63 +1802,57 @@ export function ExplorerScreen({ status, onLocked }: Props) {
             />
           </label>
           <button type="button" className="btn primary" onClick={() => void savePassword()}>
-            Change password
+            {t("settings.changePwBtn")}
           </button>
           {settingsMsg && <p className="muted">{settingsMsg}</p>}
-          <p className="muted small">
-            Recovery key is unchanged when you change the master password.
-          </p>
+          <p className="muted small">{t("settings.recoveryUnchanged")}</p>
         </div>
       )}
 
       {panel === "about" && (
         <div
           className="settings-panel card about-panel-compact"
-          aria-label="About SecretFolder"
+          aria-label={t("about.aria")}
         >
           <div className="about-head">
             <div className="logo-mark about-mark" aria-hidden>
               <img src={appMark} alt="" width={36} height={36} draggable={false} />
             </div>
             <div>
-              <h2>About</h2>
-              <p className="about-hello">Hi I&apos;m Ahmi, hope this helps!</p>
+              <h2>{t("about.title")}</h2>
+              <p className="about-hello">{t("about.hello")}</p>
             </div>
           </div>
-          <p className="muted small">
-            Local-only encrypted folder vault for Windows · MIT · v{version}
-          </p>
-          <p className="muted small">
-            Vault data stays on this PC. Network is only for signed GitHub updates.
-          </p>
+          <p className="muted small">{t("about.tagline", { version })}</p>
+          <p className="muted small">{t("about.network")}</p>
           <div className="about-links">
             <button
               type="button"
               className="btn sm primary"
               onClick={() => void openAboutLink(GITHUB_PROFILE)}
             >
-              GitHub
+              {t("about.github")}
             </button>
             <button
               type="button"
               className="btn sm"
               onClick={() => void openAboutLink(GITHUB_REPO)}
             >
-              Repo
+              {t("about.repo")}
             </button>
             <button
               type="button"
               className="btn sm"
               onClick={() => void openAboutLink(GITHUB_RELEASES)}
             >
-              Releases
+              {t("about.releases")}
             </button>
             <button
               type="button"
               className="btn sm"
               onClick={() => void openAboutLink(PATREON_URL)}
             >
-              Patreon
+              {t("about.patreon")}
             </button>
           </div>
           <div className="about-update">
@@ -1770,8 +1863,8 @@ export function ExplorerScreen({ status, onLocked }: Props) {
               onClick={() => void onCheckUpdate()}
             >
               {updateBusy && !pendingVersion
-                ? "Checking…"
-                : "Check for updates"}
+                ? t("about.checking")
+                : t("about.check")}
             </button>
             {pendingVersion && (
               <button
@@ -1781,20 +1874,13 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                 onClick={() => void onInstallUpdate()}
               >
                 {updateBusy
-                  ? "Installing…"
-                  : `Install ${pendingVersion} & restart`}
+                  ? t("about.installing")
+                  : t("about.install", { version: pendingVersion })}
               </button>
             )}
           </div>
           {updateMsg && (
-            <p
-              className={
-                updateMsg.startsWith("You're on") ||
-                updateMsg.startsWith("Update ")
-                  ? "muted ok"
-                  : "muted"
-              }
-            >
+            <p className={updateTone === "ok" ? "muted ok" : "muted"}>
               {updateMsg}
             </p>
           )}
@@ -1813,21 +1899,23 @@ export function ExplorerScreen({ status, onLocked }: Props) {
           0,
         );
         const title = multi
-          ? needsCascade
-            ? `Delete ${batch.length} items?`
-            : `Delete ${batch.length} items?`
+          ? t("delete.titleItems", {
+              count: formatNumber(locale, batch.length),
+            })
           : needsCascade
-            ? "Folder is not empty"
+            ? t("delete.titleNotEmpty")
             : batch[0].kind === "folder"
-              ? "Delete empty folder?"
-              : "Delete item?";
+              ? t("delete.titleEmptyFolder")
+              : t("delete.titleItem");
+        const joiner = t("delete.join");
+        const quoted = batch.map((i) => t("delete.quote", { name: i.name }));
         const nameList =
           batch.length <= 3
-            ? batch.map((i) => `“${i.name}”`).join(", ")
-            : `${batch
-                .slice(0, 2)
-                .map((i) => `“${i.name}”`)
-                .join(", ")} and ${batch.length - 2} more`;
+            ? quoted.join(joiner)
+            : t("delete.andMore", {
+                names: quoted.slice(0, 2).join(joiner),
+                count: formatNumber(locale, batch.length - 2),
+              });
         return (
           <div
             className="modal-backdrop"
@@ -1846,39 +1934,23 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                 <>
                   <p>
                     {multi ? (
-                      <>
-                        Delete{" "}
-                        <span className="modal-note-name">{nameList}</span>
-                        ?{" "}
-                        <strong>
-                          {nonEmptyFolders.length} folder
-                          {nonEmptyFolders.length === 1 ? "" : "s"}
-                        </strong>{" "}
-                        still hold{" "}
-                        <strong>
-                          {totalNested} nested item
-                          {totalNested === 1 ? "" : "s"}
-                        </strong>
-                        .
-                      </>
+                      <RichText
+                        text={t("delete.multiCascade", {
+                          names: nameList,
+                          folders: plural("folders", nonEmptyFolders.length),
+                          nested: plural("nested", totalNested),
+                        })}
+                      />
                     ) : (
-                      <>
-                        <span className="modal-note-name">
-                          “{batch[0].name}”
-                        </span>{" "}
-                        still has{" "}
-                        <strong>
-                          {batch[0].childCount} item
-                          {batch[0].childCount === 1 ? "" : "s"}
-                        </strong>{" "}
-                        inside.
-                      </>
+                      <RichText
+                        text={t("delete.oneCascade", {
+                          name: batch[0].name,
+                          items: plural("child", batch[0].childCount),
+                        })}
+                      />
                     )}
                   </p>
-                  <p className="muted small">
-                    Empty folders first, or permanently delete everything
-                    selected (including nested contents). This cannot be undone.
-                  </p>
+                  <p className="muted small">{t("delete.cascadeHelp")}</p>
                   <div className="modal-actions">
                     <button
                       type="button"
@@ -1886,7 +1958,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                       disabled={busy}
                       onClick={() => setPendingDelete(null)}
                     >
-                      Cancel
+                      {t("dialog.cancel")}
                     </button>
                     <button
                       type="button"
@@ -1895,18 +1967,15 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                       onClick={() => void confirmDelete(true)}
                     >
                       {multi
-                        ? "Delete all & contents"
-                        : "Delete folder & contents"}
+                        ? t("delete.allContents")
+                        : t("delete.folderContents")}
                     </button>
                   </div>
                 </>
               ) : (
                 <>
-                  <p>
-                    Delete{" "}
-                    <span className="modal-note-name">{nameList}</span>?
-                  </p>
-                  <p className="muted small">This cannot be undone.</p>
+                  <p>{t("delete.simple", { names: nameList })}</p>
+                  <p className="muted small">{t("delete.cannotUndo")}</p>
                   <div className="modal-actions">
                     <button
                       type="button"
@@ -1914,7 +1983,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                       disabled={busy}
                       onClick={() => setPendingDelete(null)}
                     >
-                      Cancel
+                      {t("dialog.cancel")}
                     </button>
                     <button
                       type="button"
@@ -1923,10 +1992,12 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                       onClick={() => void confirmDelete(false)}
                     >
                       {multi
-                        ? `Delete ${batch.length}`
+                        ? t("delete.count", {
+                            count: formatNumber(locale, batch.length),
+                          })
                         : batch[0].kind === "folder"
-                          ? "Delete folder"
-                          : "Delete"}
+                          ? t("delete.folder")
+                          : t("delete.one")}
                     </button>
                   </div>
                 </>
@@ -1949,9 +2020,9 @@ export function ExplorerScreen({ status, onLocked }: Props) {
             aria-labelledby="name-dialog-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="name-dialog-title">{nameDialog.title}</h2>
+            <h2 id="name-dialog-title">{t(nameDialog.titleKey)}</h2>
             <label className="field">
-              <span className="muted small">Name</span>
+              <span className="muted small">{t("dialog.name")}</span>
               <input
                 ref={nameInputRef}
                 className="name-input"
@@ -1977,7 +2048,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                 disabled={busy}
                 onClick={() => setNameDialog(null)}
               >
-                Cancel
+                {t("dialog.cancel")}
               </button>
               <button
                 type="button"
@@ -1985,7 +2056,7 @@ export function ExplorerScreen({ status, onLocked }: Props) {
                 disabled={busy || !nameDialog.value.trim()}
                 onClick={() => void submitNameDialog()}
               >
-                {nameDialog.mode === "folder" ? "Create" : "Rename"}
+                {nameDialog.mode === "folder" ? t("dialog.create") : t("dialog.rename")}
               </button>
             </div>
           </div>
