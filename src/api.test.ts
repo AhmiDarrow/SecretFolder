@@ -13,7 +13,9 @@ describe("api surface", () => {
     const keys = Object.keys(api).sort();
     expect(keys).toEqual(
       [
+        "bootInfo",
         "changePassword",
+        "ciReport",
         "createFolder",
         "createText",
         "deleteItem",
@@ -32,6 +34,8 @@ describe("api surface", () => {
         "quitApp",
         "renameItem",
         "setIdleLockSecs",
+        "setTrayLabels",
+        "setUiLocale",
         "setup",
         "showMain",
         "status",

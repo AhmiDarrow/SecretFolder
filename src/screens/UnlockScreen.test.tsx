@@ -17,6 +17,7 @@ vi.mock("../api", () => ({ api: mockApi }));
 // Mock asset import
 vi.mock("../assets/app-mark.png", () => ({ default: "app-mark.png" }));
 
+import { resetI18nForTests, setLocale } from "../i18n";
 import { UnlockScreen } from "./UnlockScreen";
 
 type UnlockProps = {
@@ -40,6 +41,7 @@ function renderScreen(overrides: Partial<UnlockProps> = {}) {
 }
 
 beforeEach(() => {
+  resetI18nForTests();
   vi.clearAllMocks();
   mockApi.setup.mockResolvedValue("RECOVERY-KEY-12345");
   mockApi.unlock.mockResolvedValue(undefined);
@@ -49,6 +51,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetI18nForTests();
 });
 
 describe("UnlockScreen — setup mode", () => {
@@ -256,5 +259,23 @@ describe("UnlockScreen — show-recovery mode (post-setup)", () => {
     await waitFor(() => {
       expect(onRecoveryConfirmed).toHaveBeenCalled();
     });
+  });
+});
+
+describe("UnlockScreen — locale", () => {
+  it("renders the setup title in the chosen language", () => {
+    setLocale("de", { persist: false });
+    renderScreen();
+    expect(screen.getByRole("heading", { name: "Eigenen Tresor anlegen" })).toBeTruthy();
+    cleanup();
+
+    setLocale("es", { persist: false });
+    renderScreen();
+    expect(screen.getByRole("heading", { name: "Crea tu bóveda" })).toBeTruthy();
+    cleanup();
+
+    setLocale("ja", { persist: false });
+    renderScreen();
+    expect(screen.getByRole("heading", { name: "保管庫を作成" })).toBeTruthy();
   });
 });

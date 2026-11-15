@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { resetI18nForTests } from "./i18n";
 import App from "./App";
 
 const { mockListen, mockGetCurrentWindow } = vi.hoisted(() => ({
@@ -114,6 +115,7 @@ vi.mock("./screens/ExplorerScreen", async () => {
 
 describe("App routing", () => {
   beforeEach(() => {
+    resetI18nForTests();
     vi.clearAllMocks();
     mockListItems.mockResolvedValue([]);
     mockFolderPath.mockResolvedValue([]);
