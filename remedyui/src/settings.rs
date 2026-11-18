@@ -119,6 +119,13 @@ pub fn settings(st: &St, ui: &Ui) -> El {
             })
             .hidden(m.is_none());
     });
+    // Screen capture protection is asked for; some systems (Wayland, X11) cannot give it.
+    let protected = st.window.borrow().as_ref().is_none_or(remedy_ui::Window::is_capture_protected);
+    let capture = w::section(ui, "Screen capture").child(w::label(
+        ui,
+        "This system cannot keep SecretFolder out of screenshots or screen sharing. Lock the vault before sharing your screen.",
+        "muted",
+    ));
     w::scroll(ui).grow(1.0).fill_width().child(
         w::column(ui)
             .gap(unit * 6.0)
@@ -128,6 +135,7 @@ pub fn settings(st: &St, ui: &Ui) -> El {
             .child(w::heading(ui, 1, "Settings"))
             .child(idle)
             .child(password)
+            .child(capture.hidden(protected))
             .child(line),
     )
 }
