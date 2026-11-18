@@ -34,6 +34,11 @@ struct Driver {
 
 impl Driver {
     fn new() -> Self {
+        Self::on(true)
+    }
+
+    /// The app on a system that can (or cannot) keep windows out of screen capture.
+    fn on(capture_supported: bool) -> Self {
         let dir = tempfile::tempdir().expect("temp dir");
         let root = dir.path().join("vault");
         let slot: Rc<RefCell<Option<St>>> = Rc::default();
@@ -46,6 +51,7 @@ impl Driver {
                 *s2.borrow_mut() = Some(crate::state::start_at(app, Some(root)));
             });
         let mut host = HeadlessHost::new();
+        host.set_capture_supported(capture_supported);
         host.run_frames(&mut runner, 1);
         let st = slot.borrow().clone().expect("the app started");
         let mut d = Driver {
@@ -742,6 +748,18 @@ fn images_preview_search_filters_and_unsaved_text_is_never_lost_silently() {
             .as_deref(),
         Some("draft that must survive")
     );
+}
+
+#[test]
+fn settings_say_when_the_system_cannot_hide_the_vault_from_capture() {
+    for supported in [true, false] {
+        let mut d = Driver::on(supported);
+        d.set_up();
+        d.click("Settings");
+        d.frames(2);
+        let note = "This system cannot keep SecretFolder out of screenshots or screen sharing. Lock the vault before sharing your screen.";
+        assert_eq!(d.has(note), !supported, "capture supported: {supported}");
+    }
 }
 
 /// Writes what the window shows to `SECRETFOLDER_SHOTS` (a folder), for looking at the
