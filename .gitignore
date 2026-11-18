@@ -43,3 +43,4 @@ _vault_tail.txt
 .tmp-release/
 .remedy-build/
 
+remedyui/target/
