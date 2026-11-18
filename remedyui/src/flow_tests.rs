@@ -751,6 +751,23 @@ fn images_preview_search_filters_and_unsaved_text_is_never_lost_silently() {
 }
 
 #[test]
+fn every_screen_fits_the_smallest_window() {
+    let mut d = Driver::new();
+    let w = d.win();
+    d.host.user_resize(w, remedy_ui::core::Size::new(560.0, 420.0));
+    d.frames(3);
+    d.assert_accessible();
+    d.set_up();
+    d.frames(2);
+    d.assert_accessible();
+    for tab in ["Settings", "About", "Files"] {
+        d.click(tab);
+        d.frames(2);
+        d.assert_accessible();
+    }
+}
+
+#[test]
 fn settings_say_when_the_system_cannot_hide_the_vault_from_capture() {
     for supported in [true, false] {
         let mut d = Driver::on(supported);
