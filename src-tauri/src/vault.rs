@@ -1200,7 +1200,7 @@ fn windows_replace_file(from: &Path, to: &Path) -> AppResult<()> {
     const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
 
     #[link(name = "kernel32")]
-    extern "system" {
+    unsafe extern "system" {
         fn MoveFileExW(
             lp_existing_file_name: *const u16,
             lp_new_file_name: *const u16,
