@@ -33,12 +33,10 @@ pub fn settings(st: &St, ui: &Ui) -> El {
             ));
         }
     });
-    let options = NumberOptions {
-        min: Some(Decimal::from_int(1)),
-        max: Some(Decimal::from_int(MAX_IDLE_MINUTES)),
-        unit: Some("min".into()),
-        ..NumberOptions::default()
-    };
+    let options = NumberOptions::default()
+        .min(Decimal::from_int(1))
+        .max(Decimal::from_int(MAX_IDLE_MINUTES))
+        .unit("min");
     let s1 = st.clone();
     let save_idle = move || {
         let m = minutes(mins.get_untracked().unwrap_or(Decimal::from_int(15)));
@@ -62,11 +60,7 @@ pub fn settings(st: &St, ui: &Ui) -> El {
                 .child(number_input(ui, "Idle lock (minutes)", mins, options))
                 .child(w::button(ui, "Save", save_idle)),
         )
-        .child(w::label(
-            ui,
-            "Locks after this long with no input. Default is 15 minutes.",
-            "muted",
-        ));
+        .child(w::text(ui, "Locks after this long with no input. Default is 15 minutes.").variant("muted"));
 
     // ---- password
     let current = w::secret_input(ui, "Current password");
@@ -86,10 +80,22 @@ pub fn settings(st: &St, ui: &Ui) -> El {
             msg.set(Some((false, "New passwords do not match.".into())));
             return;
         }
-        match s2.with(|v| v.change_password(cur.expose(), pw.expose())) {
-            Ok(()) => msg.set(Some((true, "Password changed.".into()))),
-            Err(e) => msg.set(Some((false, e.to_string()))),
+        let Some(vault) = s2.shared() else { return };
+        if s2.busy.get_untracked().unwrap_or(false) {
+            return;
         }
+        s2.busy.set(true);
+        let s3 = s2.clone();
+        s2.app.background(
+            move || vault.lock().unwrap_or_else(|e| e.into_inner()).change_password(cur.expose(), pw.expose()),
+            move |r| {
+                s3.busy.set(false);
+                match r {
+                    Ok(()) => msg.set(Some((true, "Password changed.".into()))),
+                    Err(e) => msg.set(Some((false, e.to_string()))),
+                }
+            },
+        );
     };
     let password = w::section(ui, "Change master password")
         .child(w::field(ui, "Current password", current.el().fill_width()))
@@ -99,14 +105,15 @@ pub fn settings(st: &St, ui: &Ui) -> El {
             "Confirm new password",
             again.el().fill_width(),
         ))
-        .child(w::button(ui, "Change password", change).variant("primary"))
-        .child(w::label(
-            ui,
-            "Recovery key is unchanged when you change the master password.",
-            "muted",
-        ));
+        .child({
+            let busy = st.busy;
+            w::button(ui, move || if busy.get() { "Working…".to_owned() } else { "Change password".to_owned() }, change)
+                .variant("primary")
+                .disabled(move || busy.get())
+        })
+        .child(w::text(ui, "Recovery key is unchanged when you change the master password.").variant("muted"));
 
-    let line = w::label(ui, "", "").text_dyn(move || msg.get().map(|(_, m)| m).unwrap_or_default());
+    let line = w::text(ui, "").variant("").text(move || msg.get().map(|(_, m)| m).unwrap_or_default());
     let l2 = line.clone();
     let line = line.bind(move || {
         let m = msg.get();
@@ -121,11 +128,7 @@ pub fn settings(st: &St, ui: &Ui) -> El {
     });
     // Screen capture protection is asked for; some systems (Wayland, X11) cannot give it.
     let protected = st.window.borrow().as_ref().is_none_or(remedy_ui::Window::is_capture_protected);
-    let capture = w::section(ui, "Screen capture").child(w::label(
-        ui,
-        "This system cannot keep SecretFolder out of screenshots or screen sharing. Lock the vault before sharing your screen.",
-        "muted",
-    ));
+    let capture = w::section(ui, "Screen capture").child(w::text(ui, "This system cannot keep SecretFolder out of screenshots or screen sharing. Lock the vault before sharing your screen.").variant("muted"));
     w::scroll(ui).grow(1.0).fill_width().child(
         w::column(ui)
             .gap(unit * 6.0)

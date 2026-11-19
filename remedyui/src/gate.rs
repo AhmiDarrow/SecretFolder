@@ -22,7 +22,7 @@ const MIN_PASSWORD: usize = 12;
 /// Error text that follows the shared error signal; takes no space while there is none.
 pub fn error_line(st: &St, ui: &Ui) -> El {
     let e = st.error;
-    let label = w::label(ui, "", "error").text_dyn(move || e.get().unwrap_or_default());
+    let label = w::text(ui, "").variant("error").text(move || e.get().unwrap_or_default());
     let l2 = label.clone();
     label.bind(move || {
         let msg = e.get();
@@ -36,16 +36,13 @@ pub fn error_line(st: &St, ui: &Ui) -> El {
 /// A button whose label follows `f`.
 pub fn dyn_label(b: El, f: impl Fn() -> String + 'static) -> El {
     if let Some(l) = b.child_elements().into_iter().next() {
-        let _ = l.text_dyn(f);
+        let _ = l.text(f);
     }
     b
 }
 
 pub fn fineprint(ui: &Ui, s: &str) -> El {
-    w::label(ui, s, "muted").style(StylePatch {
-        text_size: Some(ui.theme().type_scale.small),
-        ..StylePatch::default()
-    })
+    w::text(ui, s).variant("muted").style(StylePatch::new().text_size(ui.theme().type_scale.small))
 }
 
 /// The centered card every gate screen sits in, with the app's mark.
@@ -128,8 +125,9 @@ pub fn gate(st: &St, ui: &Ui, setup: bool, use_recovery: Signal<bool>) -> El {
     let mut form = w::column(ui)
         .gap(unit * 3.0)
         .fill_width()
+        .child(mark(ui))
         .child(w::heading(ui, 1, title))
-        .child(w::label(ui, hint, "muted"))
+        .child(w::text(ui, hint).variant("muted"))
         .child(w::field(ui, label, pass.el().fill_width()));
     if let Some(c) = &confirm {
         let s3 = submit.clone();
@@ -256,12 +254,9 @@ pub fn recovery_key(st: &St, ui: &Ui) -> El {
         .map(|k| k.to_string())
         .unwrap_or_default();
     let saved = Signal::new(false);
-    let shown = w::label(ui, Zeroizing::new(key).as_str(), "strong")
+    let shown = w::text(ui, Zeroizing::new(key).as_str()).variant("strong")
         .data_text()
-        .style(StylePatch {
-            mono: Some(true),
-            ..StylePatch::default()
-        })
+        .style(StylePatch::new().mono(true))
         .semantics(
             remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Status).label("Recovery key"),
         );
@@ -320,13 +315,10 @@ pub fn recovery_key(st: &St, ui: &Ui) -> El {
         w::column(ui)
             .gap(unit * 3.0)
             .fill_width()
+            .child(mark(ui))
             .child(w::heading(ui, 1, "Save your recovery key"))
-            .child(w::label(
-                ui,
-                "This is the only time SecretFolder will show this key. Store it offline — it unlocks the vault if \
-                 you forget the master password. Anyone with this key can open your vault.",
-                "muted",
-            ))
+            .child(w::text(ui, "This is the only time SecretFolder will show this key. Store it offline — it unlocks the vault if \
+                 you forget the master password. Anyone with this key can open your vault.").variant("muted"))
             .child(w::card(ui).fill_width().child(shown))
             .child(copy_btn)
             .child(check)
@@ -343,8 +335,22 @@ pub fn broken(st: &St, ui: &Ui) -> El {
         ui,
         w::column(ui)
             .gap(ui.theme().spacing.unit * 3.0)
+            .child(mark(ui))
             .child(w::heading(ui, 1, "SecretFolder can't start"))
-            .child(w::label(ui, st.load_error.clone(), "error"))
+            .child(w::text(ui, st.load_error.clone()).variant("error"))
             .child(w::button(ui, "Quit", move || state::quit(&s)).variant("danger")),
     )
+}
+
+/// The app mark at the top of a gate card (decorative: the heading names the screen).
+fn mark(ui: &Ui) -> El {
+    remedy_ui_media_image::image(
+        ui,
+        remedy_ui_media_image::Source::Bytes(std::sync::Arc::from(crate::explorer::MARK)),
+        "",
+        remedy_ui_media_image::Fit::Contain,
+    )
+    .width(44.0)
+    .height(44.0)
+    .semantics(remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Image).hidden(true))
 }
