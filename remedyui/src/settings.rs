@@ -113,19 +113,16 @@ pub fn settings(st: &St, ui: &Ui) -> El {
         })
         .child(w::text(ui, "Recovery key is unchanged when you change the master password.").variant("muted"));
 
-    let line = w::text(ui, "").variant("").text(move || msg.get().map(|(_, m)| m).unwrap_or_default());
-    let l2 = line.clone();
-    let line = line.bind(move || {
-        let m = msg.get();
-        let _ = l2
-            .clone()
-            .variant(if m.as_ref().is_some_and(|(ok, _)| *ok) {
-                "ok"
-            } else {
-                "error"
-            })
-            .hidden(m.is_none());
-    });
+    let u = ui.clone();
+    let line = remedy_ui::show(ui, move || msg.with(Option::is_some), move || {
+        let l = w::text(&u, "").text(move || msg.get().map(|(_, m)| m).unwrap_or_default());
+        let l2 = l.clone();
+        l.bind(move || {
+            let ok = msg.with(|m| m.as_ref().is_some_and(|(ok, _)| *ok));
+            let _ = l2.clone().variant(if ok { "ok" } else { "error" });
+        })
+    })
+    .el();
     // Screen capture protection is asked for; some systems (Wayland, X11) cannot give it.
     let protected = st.window.borrow().as_ref().is_none_or(remedy_ui::Window::is_capture_protected);
     let capture = w::section(ui, "Screen capture").child(w::text(ui, "This system cannot keep SecretFolder out of screenshots or screen sharing. Lock the vault before sharing your screen.").variant("muted"));

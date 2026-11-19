@@ -29,6 +29,7 @@ mod vault;
 mod about;
 mod explorer;
 mod files;
+mod fonts;
 mod gate;
 mod settings;
 mod state;
@@ -44,9 +45,9 @@ fn main() {
     } else {
         "SecretFolder"
     };
-    let config = remedy_ui::AppConfig::new(name)
-        .single_instance()
-        .theme(state::theme(), remedy_ui_themes::sheet);
+    let config = fonts::with_inter(
+        remedy_ui::AppConfig::new(name).single_instance().theme(state::theme(), remedy_ui_themes::sheet),
+    );
     if let Err(e) = remedy_ui::run(config, |app| {
         state::start(app);
     }) {

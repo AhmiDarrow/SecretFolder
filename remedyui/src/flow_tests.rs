@@ -43,7 +43,9 @@ impl Driver {
         assert!(crate::state::vault_override().is_some(), "tests never open the person's own vault");
         let slot: Rc<RefCell<Option<St>>> = Rc::default();
         let s2 = slot.clone();
-        let config = AppConfig::new("SecretFolder test").cpu_only().theme(crate::state::theme(), remedy_ui_themes::sheet);
+        let config = crate::fonts::with_inter(
+            AppConfig::new("SecretFolder test").cpu_only().theme(crate::state::theme(), remedy_ui_themes::sheet),
+        );
         let mut runner = Runner::with_geometry(config, GeometryStore::in_memory(), move |app: &App| {
             *s2.borrow_mut() = Some(crate::state::start_at(app, crate::state::vault_override()));
         });
@@ -61,9 +63,9 @@ impl Driver {
         let root = dir.path().join("vault");
         let slot: Rc<RefCell<Option<St>>> = Rc::default();
         let s2 = slot.clone();
-        let config = AppConfig::new("SecretFolder test")
-            .cpu_only()
-            .theme(crate::state::theme(), remedy_ui_themes::sheet);
+        let config = crate::fonts::with_inter(
+            AppConfig::new("SecretFolder test").cpu_only().theme(crate::state::theme(), remedy_ui_themes::sheet),
+        );
         let mut runner =
             Runner::with_geometry(config, GeometryStore::in_memory(), move |app: &App| {
                 *s2.borrow_mut() = Some(crate::state::start_at(app, Some(root)));
