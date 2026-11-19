@@ -19,7 +19,7 @@ pub const MARK: &[u8] = include_bytes!("../../src-tauri/icons/64x64.png");
 /// Opens the window.
 pub fn open(st: &St) {
     let spec = WindowSpec::new("SecretFolder")
-        .size(1000.0, 680.0)
+        .size(920.0, 640.0)
         .min_size(560.0, 420.0)
         .hide_on_close()
         .persist_geometry("main")
@@ -62,7 +62,7 @@ fn build(st: &St, ui: &Ui, win: &Window) {
 fn brand(st: &St, ui: &Ui) -> El {
     let unit = ui.theme().spacing.unit;
     let status = st.status;
-    let count = w::label(ui, "", "muted").nowrap().text_dyn(move || {
+    let count = w::text(ui, "").variant("muted").nowrap().text(move || {
         let n = status.get().map_or(0, |s| s.item_count);
         if n == 1 {
             "1 item".to_owned()
@@ -78,7 +78,7 @@ fn brand(st: &St, ui: &Ui) -> El {
                 .width(28.0)
                 .height(28.0),
         )
-        .child(w::label(ui, "SecretFolder", "strong").nowrap())
+        .child(w::text(ui, "SecretFolder").variant("strong").nowrap())
         .child(count)
 }
 
@@ -107,10 +107,7 @@ fn unlocked(st: &St, ui: &Ui, win: &Window, tab: Signal<Option<String>>) -> El {
         .align(Align::Center)
         .gap(unit * 3.0)
         .padding(Insets::symmetric(unit * 2.0, unit * 4.0))
-        .style(remedy_ui::style::StylePatch {
-            background: Some(ui.theme().colors.panel),
-            ..Default::default()
-        })
+        .style(remedy_ui::style::StylePatch::new().background(ui.theme().colors.panel))
         .child(brand(st, ui).grow(1.0))
         .child(nav::tabs(ui, "Sections", tabs, tab, |_| {}))
         .child(
@@ -155,9 +152,9 @@ fn unlocked(st: &St, ui: &Ui, win: &Window, tab: Signal<Option<String>>) -> El {
 fn banner(st: &St, ui: &Ui) -> El {
     let unit = ui.theme().spacing.unit;
     let e = st.error;
-    let text = w::label(ui, "", "error")
+    let text = w::text(ui, "").variant("error")
         .grow(1.0)
-        .text_dyn(move || e.get().unwrap_or_default());
+        .text(move || e.get().unwrap_or_default());
     let bar = w::row(ui)
         .fill_width()
         .align(Align::Center)

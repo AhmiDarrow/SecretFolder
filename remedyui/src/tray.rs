@@ -26,22 +26,22 @@ pub fn install(st: &St) {
         label: label.to_owned(),
         enabled: true,
     };
-    st.app.set_tray(Some(TrayIcon {
-        tooltip: "SecretFolder".to_owned(),
-        icon: image,
-        menu: vec![
+    st.app.set_tray(Some(TrayIcon::new(
+        "SecretFolder",
+        image,
+        vec![
             item(SHOW, "Show SecretFolder"),
             item(LOCK, "Lock vault"),
             TrayItem::Separator,
             item(QUIT, "Quit SecretFolder"),
         ],
-    }));
+    )));
     let st = st.clone();
     st.app.clone().on_tray(move |e| match e {
         TrayEvent::Activate | TrayEvent::Menu(SHOW) => state::show(&st),
         TrayEvent::Menu(LOCK) => state::lock(&st),
         TrayEvent::Menu(QUIT) => state::quit(&st),
-        TrayEvent::Menu(_) => {}
+        _ => {}
     });
 }
 

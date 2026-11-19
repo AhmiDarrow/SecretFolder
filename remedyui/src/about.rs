@@ -127,11 +127,11 @@ pub fn about(st: &St, ui: &Ui) -> El {
     for (i, (label, url)) in LINKS.iter().enumerate() {
         let s = st.clone();
         let b = w::button(ui, *label, move || {
-            s.app.open_url(*url, move |r| link_error.set(r.err()));
+            s.app.open_url(*url, move |r| link_error.set(r.err().map(|e| e.reason)));
         });
         links = links.child(if i == 0 { b.variant("primary") } else { b });
     }
-    let err = w::label(ui, "", "error").text_dyn(move || link_error.get().unwrap_or_default());
+    let err = w::text(ui, "").variant("error").text(move || link_error.get().unwrap_or_default());
     let e2 = err.clone();
     let err = err.bind(move || {
         let _ = e2.clone().hidden(link_error.get().is_none());
@@ -159,22 +159,14 @@ pub fn about(st: &St, ui: &Ui) -> El {
                     .child(
                         w::column(ui)
                             .child(w::heading(ui, 1, "About"))
-                            .child(w::label(ui, "Hi I'm Ahmi, hope this helps!", "")),
+                            .child(w::text(ui, "Hi I'm Ahmi, hope this helps!").variant("")),
                     ),
             )
-            .child(w::label(
-                ui,
-                format!(
+            .child(w::text(ui, format!(
                     "Local-only encrypted folder vault · MIT · v{} · built with RemedyUI",
                     env!("CARGO_PKG_VERSION")
-                ),
-                "muted",
-            ))
-            .child(w::label(
-                ui,
-                "Vault data stays on this PC. Network is only for signed GitHub updates.",
-                "muted",
-            ))
+                )).variant("muted"))
+            .child(w::text(ui, "Vault data stays on this PC. Network is only for signed GitHub updates.").variant("muted"))
             .child(links)
             .child(err)
             .child(w::button(ui, "Check for updates", move || check(&s3, &u3)))

@@ -37,6 +37,24 @@ impl Driver {
         Self::on(true)
     }
 
+    /// The app as `main` starts it, on the vault `SECRETFOLDER_VAULT` names (tests always set
+    /// it, to a temporary copy).
+    fn from_env(dir: tempfile::TempDir) -> Self {
+        assert!(crate::state::vault_override().is_some(), "tests never open the person's own vault");
+        let slot: Rc<RefCell<Option<St>>> = Rc::default();
+        let s2 = slot.clone();
+        let config = AppConfig::new("SecretFolder test").cpu_only().theme(crate::state::theme(), remedy_ui_themes::sheet);
+        let mut runner = Runner::with_geometry(config, GeometryStore::in_memory(), move |app: &App| {
+            *s2.borrow_mut() = Some(crate::state::start_at(app, crate::state::vault_override()));
+        });
+        let mut host = HeadlessHost::new();
+        host.run_frames(&mut runner, 1);
+        let st = slot.borrow().clone().expect("the app started");
+        let mut d = Driver { host, runner, st, trees: HashMap::new(), roots: HashMap::new(), _dir: dir };
+        d.frames(2);
+        d
+    }
+
     /// The app on a system that can (or cannot) keep windows out of screen capture.
     fn on(capture_supported: bool) -> Self {
         let dir = tempfile::tempdir().expect("temp dir");
@@ -169,15 +187,7 @@ impl Driver {
         let w = self.win();
         self.host.send(HostEvent::Key(
             w,
-            KeyEvent {
-                key,
-                physical: String::new(),
-                modifiers,
-                pressed: true,
-                repeat: false,
-                composing: false,
-                text: None,
-            },
+            KeyEvent::press(key).with_modifiers(modifiers).with_text(None),
         ));
         self.frames(2);
     }
@@ -217,6 +227,8 @@ impl Driver {
         let nameless: Vec<String> = tree
             .values()
             .filter(|n| n.supports_action(Action::Click) || n.supports_action(Action::Focus))
+            // A grid row is read through its cells (ARIA and UIA name it from them).
+            .filter(|n| n.role() != remedy_ui::host::accesskit::Role::Row)
             .filter(|n| n.label().is_none_or(|l| l.trim().is_empty()))
             .map(|n| format!("{:?}", n.role()))
             .collect();
@@ -291,21 +303,7 @@ impl Driver {
         let w = self.win();
         self.host.send(HostEvent::Pointer(
             w,
-            PointerEvent {
-                id: 0,
-                kind: PointerKind::Mouse,
-                phase,
-                position: at,
-                buttons: if down {
-                    Buttons::PRIMARY
-                } else {
-                    Buttons::default()
-                },
-                pressure: 0.5,
-                time: Duration::ZERO,
-                coalesced: Vec::new(),
-                modifiers: Modifiers::NONE,
-            },
+            PointerEvent::new(phase, at).with_kind(PointerKind::Mouse).with_buttons(if down { Buttons::PRIMARY } else { Buttons::default() }),
         ));
     }
 }
@@ -322,9 +320,10 @@ fn texts(e: &El) -> Vec<String> {
     out
 }
 
+/// A point on a row's name (away from the row's buttons), half way down.
 fn centre(e: &El) -> Point {
     let b = e.bounds().expect("laid out");
-    Point::new((b.min.x + b.max.x) / 2.0, (b.min.y + b.max.y) / 2.0)
+    Point::new(b.min.x + 80.0, (b.min.y + b.max.y) / 2.0)
 }
 
 #[test]
@@ -591,7 +590,7 @@ fn wrong_passwords_are_throttled_and_settings_tray_and_links_work() {
     d.type_into("New password", "a brand new passphrase");
     d.type_into("Confirm new password", "a brand new passphrase");
     d.click("Change password");
-    assert!(d.has("Password changed."));
+    d.until("the change", |d| d.has("Password changed."));
     // About: links open through the system, only to the project's pages.
     d.click("About");
     d.click("Repo");
@@ -787,35 +786,266 @@ fn shots() {
     let Some(dir) = std::env::var_os("SECRETFOLDER_SHOTS").map(std::path::PathBuf::from) else {
         return;
     };
-    let mut d = Driver::new();
-    let shoot = |d: &Driver, name: &str| {
+    let _ = std::fs::create_dir_all(&dir);
+    let shoot = |d: &mut Driver, name: &str, size: Option<(f32, f32)>| {
+        if let Some((w, h)) = size {
+            let win = d.win();
+            d.host.user_resize(win, remedy_ui::core::Size::new(w, h));
+            d.frames(3);
+        }
         let w = d.host.window(d.win()).expect("window");
         let (width, height, _) = w.size();
         let rgba = w.surface().to_vec();
-        let _ = image::save_buffer(
-            dir.join(format!("{name}.png")),
-            &rgba,
-            width,
-            height,
-            image::ExtendedColorType::Rgba8,
-        );
+        let _ = image::save_buffer(dir.join(format!("{name}.png")), &rgba, width, height, image::ExtendedColorType::Rgba8);
     };
-    shoot(&d, "1-setup");
-    d.set_up();
-    d.click("New folder");
-    d.type_into("Folder name", "Taxes 2026");
-    d.click("Create");
-    d.click("New text");
-    d.type_into("Text", "Recovery codes\n\n1. 4711-0815\n2. 1234-5678");
-    d.click("Save");
-    // Let the mark's image decode (off the UI thread).
+    // The shipped app's sample vault (the same one the before-pictures show).
+    let mut d = Driver::new();
+    let win = d.win();
+    d.host.user_resize(win, remedy_ui::core::Size::new(920.0, 640.0));
+    d.frames(3);
+    shoot(&mut d, "01-setup", None);
+    d.type_into("Master password", "short");
+    d.type_into("Confirm password", "short");
+    d.click("Create vault");
+    shoot(&mut d, "01-setup-short-password", None);
+    d.type_into("Master password", PASSWORD);
+    d.type_into("Confirm password", PASSWORD);
+    d.click("Create vault");
+    d.until("the recovery key", |d| d.screen() == Screen::Recovery);
+    d.frames(3);
+    shoot(&mut d, "02-recovery-key", None);
+    d.click("I saved this recovery key somewhere safe");
+    d.click("Continue to vault");
+    d.until("the explorer", |d| d.screen() == Screen::Unlocked);
     d.until("the mark", |_| remedy_ui_media_image::cached() > 0);
     d.frames(3);
-    shoot(&d, "2-explorer");
+    shoot(&mut d, "04-files-empty", None);
+    let png = include_bytes!("../tests/fixtures/sample.png");
+    let docs = d.st.with(|v| v.create_folder("Documents", None)).expect("folder");
+    let taxes = d.st.with(|v| v.create_folder("Taxes 2026", Some(docs.id.clone()))).expect("folder");
+    d.st.with(|v| v.create_folder("Empty folder", None)).expect("folder");
+    d.st.with(|v| v.create_text("Passwords.txt", "bank: sample-not-real\nemail: sample\n", None)).expect("text");
+    d.st.with(|v| v.create_text("Wi-Fi notes.md", "Guest network: sample\n", Some(docs.id.clone()))).expect("text");
+    d.st.with(|v| v.import_bytes("photo.png".into(), "image/png".into(), png.to_vec(), Some(docs.id.clone()))).expect("png");
+    d.st.with(|v| v.import_bytes("backup.bin".into(), "application/octet-stream".into(), vec![7; 70_000], Some(taxes.id.clone())))
+        .expect("bin");
+    crate::state::changed(&d.st);
+    d.frames(3);
+    shoot(&mut d, "04-files", None);
+    shoot(&mut d, "04-files-narrow", Some((720.0, 480.0)));
+    shoot(&mut d, "04-files-wide", Some((1400.0, 900.0)));
+    let win = d.win();
+    d.host.user_resize(win, remedy_ui::core::Size::new(920.0, 640.0));
+    d.frames(3);
+    let c = centre(&d.row("Passwords.txt"));
+    d.pointer(c, PointerPhase::Down, true);
+    d.pointer(c, PointerPhase::Up, false);
+    d.frames(3);
+    shoot(&mut d, "06-text-open", None);
+    d.click("Open folder Documents");
+    d.frames(3);
+    shoot(&mut d, "05-folder", None);
+    let c = centre(&d.row("photo.png"));
+    d.pointer(c, PointerPhase::Down, true);
+    d.pointer(c, PointerPhase::Up, false);
+    d.until("the preview", |_| remedy_ui_media_image::cached() > 1);
+    d.frames(3);
+    shoot(&mut d, "07-image-open", None);
+    d.click("Open folder Taxes 2026");
+    let c = centre(&d.row("backup.bin"));
+    d.pointer(c, PointerPhase::Down, true);
+    d.pointer(c, PointerPhase::Up, false);
+    d.frames(3);
+    shoot(&mut d, "08-binary-open", None);
+    d.click("Go to parent folder");
+    d.click("Go to parent folder");
+    d.click("New folder");
+    shoot(&mut d, "09-new-folder-dialog", None);
+    d.click("Cancel");
+    d.click("Remove folder Documents");
+    shoot(&mut d, "10-delete-folder-dialog", None);
+    d.click("Cancel");
+    d.click("Remove Passwords.txt");
+    shoot(&mut d, "10-delete-item-dialog", None);
+    d.click("Cancel");
     d.click("Settings");
     d.frames(2);
-    shoot(&d, "3-settings");
+    shoot(&mut d, "11-settings", None);
     d.click("About");
     d.frames(2);
-    shoot(&d, "4-about");
+    shoot(&mut d, "12-about", None);
+    d.click("Lock");
+    d.frames(2);
+    shoot(&mut d, "03-unlock", None);
+    d.type_into("Master password", "not the password at all");
+    d.click("Unlock");
+    d.until("the refusal", |d| d.error().is_some());
+    d.frames(2);
+    shoot(&mut d, "03-unlock-wrong-password", None);
+    d.click("Use recovery key");
+    shoot(&mut d, "03-unlock-recovery-key", None);
+}
+
+/// Copies a folder tree.
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).expect("mkdir");
+    for e in std::fs::read_dir(from).expect("read dir").flatten() {
+        let (src, dst) = (e.path(), to.join(e.file_name()));
+        if src.is_dir() {
+            copy_tree(&src, &dst);
+        } else {
+            std::fs::copy(&src, &dst).expect("copy");
+        }
+    }
+}
+
+/// Every item under `parent`, by path, read through the vault code.
+fn tree_of(v: &mut crate::vault::Vault, parent: Option<String>, prefix: &str, out: &mut Vec<(String, ItemKind, String, Vec<u8>)>) {
+    for i in v.list_items_in(parent).expect("list") {
+        let path = format!("{prefix}/{}", i.name);
+        if i.kind == ItemKind::Folder {
+            out.push((path.clone(), i.kind, i.mime.clone(), Vec::new()));
+            tree_of(v, Some(i.id.clone()), &path, out);
+        } else {
+            let (_, bytes) = v.export_bytes(&i.id).expect("export");
+            out.push((path, i.kind, i.mime.clone(), bytes));
+        }
+    }
+}
+
+/// Vaults written by shipped releases (0.1.0, the first, and 0.1.7, the last Tauri release)
+/// open in this build through `SECRETFOLDER_VAULT`, show their folders and files, take edits,
+/// and read back afterwards through the shipped vault code with nothing lost. The fixtures and
+/// their expected contents were made by `compat/shipped.sh` with the release tags' own code.
+#[test]
+fn shipped_vaults_open_edit_and_reopen_without_loss() {
+    for (tag, pw) in [("v0.1.0", "old-pass9"), ("v0.1.7", PASSWORD)] {
+        shipped_vault_round_trip(tag, pw);
+    }
+}
+
+fn shipped_vault_round_trip(tag: &str, pw: &str) {
+    use base64::Engine;
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root = dir.path().join("vault");
+    copy_tree(&fixtures.join(format!("vault-{tag}")), &root);
+    let recovery = std::fs::read_to_string(fixtures.join(format!("{tag}.recovery"))).expect("recovery key");
+    let expected: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(fixtures.join(format!("vault-{tag}.expected.json"))).expect("expected"),
+    )
+    .expect("json");
+    let want: Vec<(String, String, Vec<u8>)> = expected["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|i| {
+            let data = i["data_b64"].as_str().map(|b| base64::engine::general_purpose::STANDARD.decode(b).expect("b64"));
+            (i["path"].as_str().unwrap_or_default().to_owned(), i["mime"].as_str().unwrap_or_default().to_owned(), data.unwrap_or_default())
+        })
+        .collect();
+
+    // SAFETY: the only test that touches SECRETFOLDER_VAULT; set and read on this thread
+    // before the app starts.
+    unsafe { std::env::set_var("SECRETFOLDER_VAULT", &root) };
+    let mut d = Driver::from_env(dir);
+    unsafe { std::env::remove_var("SECRETFOLDER_VAULT") };
+    assert_eq!(d.screen(), Screen::Unlock, "{tag}: an existing vault asks for its password");
+    d.type_into("Master password", pw);
+    d.click("Unlock");
+    d.until("unlock", |d| d.screen() == Screen::Unlocked);
+    d.frames(2);
+    let mut top = d.names();
+    top.sort();
+    assert_eq!(top, vec!["Documents", "Empty folder", "Passwords.txt"], "{tag}: the top level");
+    d.assert_accessible();
+    assert_eq!(d.st.status.get_untracked().ok().flatten().map(|s| s.idle_lock_secs), Some(1800), "{tag}: idle lock kept");
+
+    // Into Documents with its row's Open button; the image and text show.
+    d.click("Open folder Documents");
+    let mut docs = d.names();
+    docs.sort();
+    assert_eq!(docs, vec!["Taxes 2026", "final.txt", "photo.png", "Ünïcödé 日本語 — notes.md"], "{tag}: Documents");
+    d.assert_accessible();
+    // Back up through the ".." row.
+    d.click("Go to parent folder");
+    assert!(d.names().contains(&"Passwords.txt".to_owned()));
+
+    // Edits: Passwords.txt gets new text; "Empty folder" is renamed; a file is imported;
+    // the idle lock and the password change.
+    let row = d.row("Passwords.txt");
+    let c = centre(&row);
+    d.pointer(c, PointerPhase::Down, true);
+    d.pointer(c, PointerPhase::Up, false);
+    d.frames(2);
+    d.type_into("Text", "bank: changed-in-remedyui\n");
+    d.key(Key::Character("s".into()), Modifiers { ctrl: true, ..Modifiers::NONE });
+    assert!(!d.st.dirty.get_untracked().unwrap_or(true), "{tag}: saved");
+    let row = d.row("Empty folder");
+    let c = centre(&row);
+    d.pointer(c, PointerPhase::Down, true);
+    d.pointer(c, PointerPhase::Up, false);
+    d.frames(2);
+    d.key(Key::F(2), Modifiers::NONE);
+    d.type_into("New name", "Archive");
+    d.click("Rename");
+    let src = d._dir.path().join("new-in-remedyui.txt");
+    std::fs::write(&src, b"made after the move to RemedyUI").expect("write");
+    d.host.answer_dialog(vec![src]);
+    d.click("Import…");
+    d.click("Settings");
+    d.type_into("Idle lock (minutes)", "45");
+    d.click("Save");
+    let new_pw = "the new master password 2026";
+    d.type_into("Current password", pw);
+    d.type_into("New password", new_pw);
+    d.type_into("Confirm new password", new_pw);
+    d.click("Change password");
+    d.until("the change", |d| d.has("Password changed."));
+    d.click("Lock");
+    assert_eq!(d.screen(), Screen::Unlock);
+    let dir = std::mem::replace(&mut d._dir, tempfile::tempdir().expect("temp dir"));
+    drop(d);
+
+    // Read back with the shipped vault code (src-tauri/src/vault.rs), by the new password
+    // and by the original recovery key.
+    for by_recovery in [false, true] {
+        let mut v = crate::vault::Vault::open_root(root.clone()).expect("the shipped code opens it");
+        if by_recovery {
+            v.unlock_with_recovery(recovery.trim()).expect("the recovery key still opens it");
+        } else {
+            v.unlock(new_pw).expect("the new password opens it");
+        }
+        assert_eq!(v.status().idle_lock_secs, 45 * 60, "{tag}: idle lock saved");
+        let mut got = Vec::new();
+        tree_of(&mut v, None, "", &mut got);
+        got.sort_by(|a, b| a.0.cmp(&b.0));
+        let paths: Vec<&str> = got.iter().map(|g| g.0.as_str()).collect();
+        let mut want_paths: Vec<String> = want
+            .iter()
+            .map(|w| w.0.replace("/Empty folder", "/Archive"))
+            .chain(["/new-in-remedyui.txt".to_owned()])
+            .collect();
+        want_paths.sort();
+        assert_eq!(paths, want_paths.iter().map(String::as_str).collect::<Vec<_>>(), "{tag}: the tree");
+        for (path, _, mime, bytes) in &got {
+            match path.as_str() {
+                "/Passwords.txt" => assert_eq!(bytes.as_slice(), b"bank: changed-in-remedyui\n"),
+                "/new-in-remedyui.txt" => assert_eq!(bytes.as_slice(), b"made after the move to RemedyUI"),
+                "/Archive" => {}
+                p => {
+                    let w = want.iter().find(|w| w.0 == p).unwrap_or_else(|| panic!("{tag}: {p}"));
+                    assert_eq!(bytes, &w.2, "{tag}: {p} contents unchanged");
+                    if !w.1.is_empty() {
+                        assert_eq!(mime, &w.1, "{tag}: {p} type");
+                    }
+                }
+            }
+        }
+        v.lock();
+    }
+    if let Some(out) = std::env::var_os("SECRETFOLDER_COMPAT_OUT") {
+        copy_tree(&root, &std::path::PathBuf::from(out).join(format!("after-{tag}")));
+    }
+    drop(dir);
 }
