@@ -131,11 +131,11 @@ pub fn about(st: &St, ui: &Ui) -> El {
         });
         links = links.child(if i == 0 { b.variant("primary") } else { b });
     }
-    let err = w::text(ui, "").variant("error").text(move || link_error.get().unwrap_or_default());
-    let e2 = err.clone();
-    let err = err.bind(move || {
-        let _ = e2.clone().hidden(link_error.get().is_none());
-    });
+    let u = ui.clone();
+    let err = remedy_ui::show(ui, move || link_error.with(Option::is_some), move || {
+        w::text(&u, "").variant("error").text(move || link_error.get().unwrap_or_default())
+    })
+    .el();
     w::scroll(ui).grow(1.0).fill_width().child(
         w::column(ui)
             .gap(unit * 4.0)

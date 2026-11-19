@@ -51,7 +51,8 @@ fn icon_for(kind: ItemKind) -> w::Icon {
     match kind {
         ItemKind::Folder => w::Icon::Folder,
         ItemKind::Text => w::Icon::Note,
-        ItemKind::Image | ItemKind::Binary => w::Icon::File,
+        ItemKind::Image => w::Icon::Image,
+        ItemKind::Binary => w::Icon::File,
     }
 }
 
@@ -343,21 +344,17 @@ pub fn files(st: &St, ui: &Ui) -> El {
         .child(w::button(ui, "Import…", move || import_dialog(&s7)));
     let selbar = selection_bar(st, ui, &tstate, detail);
     let crumbs = crumbs(st, ui, &tstate);
-    let empty = crate::state::label(ui, "", "muted").text({
-        let f = st.folder;
-        move || {
+    let (f, ue) = (st.folder, ui.clone());
+    let empty = remedy_ui::show(ui, move || shown.with(Vec::is_empty), move || {
+        crate::state::label(&ue, "", "muted").text(move || {
             if f.get().is_some() {
                 "Empty — drop files here, or drag items onto a folder in the path above to move them up.".to_owned()
             } else {
                 "Empty folder — drop files here or use Import.".to_owned()
             }
-        }
-    });
-    let e2 = empty.clone();
-    let empty = empty.bind(move || {
-        let none = shown.with(Vec::is_empty);
-        let _ = e2.clone().hidden(!none);
-    });
+        })
+    })
+    .el();
 
     let (s8, ui8, ts8) = (st.clone(), ui.clone(), tstate.clone());
     let left = w::column(ui)
@@ -661,10 +658,16 @@ fn row_actions(st: &St, ui: &Ui, i: &ItemPreview, sel: &remedy_ui_widgets_data::
 }
 
 /// Inside a folder, the ".." row: opens the parent, and takes items dragged onto it (moving
-/// them up) or files from other apps (imported into the parent).
+/// them up) or files from other apps (imported into the parent). Not there at the top.
 fn parent_row(st: &St, ui: &Ui) -> El {
+    let folder = st.folder;
+    let (s, u) = (st.clone(), ui.clone());
+    remedy_ui::show(ui, move || folder.with(Option::is_some), move || parent_row_built(&s, &u)).el()
+}
+
+fn parent_row_built(st: &St, ui: &Ui) -> El {
     let unit = ui.theme().spacing.unit;
-    let (folder, crumbs) = (st.folder, st.crumbs);
+    let crumbs = st.crumbs;
     let parent = move || {
         crumbs
             .with_untracked(|c| c.len().checked_sub(2).and_then(|i| c.get(i)).map(|p| (p.id.clone(), p.name.clone())))
@@ -702,10 +705,7 @@ fn parent_row(st: &St, ui: &Ui) -> El {
                 .action(remedy_ui_a11y::Action::Click),
         );
     w::tooltip(&row, "Go to parent folder — drop items here to move up");
-    let r2 = row.clone();
-    row.bind(move || {
-        let _ = r2.clone().hidden(folder.get().is_none());
-    })
+    row
 }
 
 fn here_of(st: &St) -> Option<String> {
@@ -1051,7 +1051,9 @@ fn text_editor(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui_widgets_data::Select
     let unit = ui.theme().spacing.unit;
     let name: TextField = w::text_input(ui, "File name");
     name.set_value(&d.item.name);
-    let body: TextField = w::text_area(ui, "Text");
+    // Copies out of the text go to the secret clipboard (out of history, cleared after 30 s),
+    // as the Copy button does.
+    let body: TextField = w::text_area(ui, "Text").copy_as_secret(COPY_KEEP);
     body.set_value(d.text.as_deref().unwrap_or_default());
     let dirty = st.dirty;
     let name = name.on_change(move || dirty.set(true));

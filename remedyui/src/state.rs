@@ -62,6 +62,9 @@ pub type St = Rc<Folder>;
 pub fn theme() -> Theme {
     let mut t = Theme::dark_forest();
     t.name = "SecretFolder".to_owned();
+    // The shipped typeface first (`font-family: "Inter", system-ui, …` in `src/App.css`); the
+    // files come with `fonts::with_inter`.
+    t.font_families.insert(0, crate::fonts::FAMILY.to_owned());
     let c = &mut t.colors;
     let hex = |s: &str| Color::from_hex(s).unwrap_or(Color::BLACK);
     c.bg = hex("#1a1b1e");

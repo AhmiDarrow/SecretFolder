@@ -15,6 +15,19 @@ use crate::state::{self, Screen, St};
 
 /// The app's mark (a folder with a lock), as the Tauri app ships it.
 pub const MARK: &[u8] = include_bytes!("../../src-tauri/icons/64x64.png");
+/// `src-tauri/icons/128x128@2x.png` (256 px), the largest of the shipped window icons; each
+/// platform scales it to the sizes it shows.
+const WINDOW_ICON: &[u8] = include_bytes!("../../src-tauri/icons/128x128@2x.png");
+
+/// The shipped app's icon for the window (taskbar, Alt+Tab, the title bar).
+pub fn window_icon() -> Option<remedy_ui::host::WindowIcon> {
+    let d = remedy_ui_media_image::decode(WINDOW_ICON, None).ok()?;
+    let img = d.image;
+    if img.width != img.height {
+        return None;
+    }
+    remedy_ui::host::WindowIcon::new(img.width, img.pixels.to_vec())
+}
 
 /// Opens the window.
 pub fn open(st: &St) {
@@ -24,6 +37,10 @@ pub fn open(st: &St) {
         .hide_on_close()
         .persist_geometry("main")
         .capture_protected(true);
+    let spec = match window_icon() {
+        Some(icon) => spec.icon(icon),
+        None => spec,
+    };
     let s = st.clone();
     let win = st.app.open(spec, move |ui, win| build(&s, ui, win));
     *st.window.borrow_mut() = Some(win);
@@ -148,10 +165,16 @@ fn unlocked(st: &St, ui: &Ui, win: &Window, tab: Signal<Option<String>>) -> El {
         .child(body)
 }
 
-/// The error banner under the header, dismissed with its button or Escape.
+/// The error banner under the header, there while there is an error, dismissed with its
+/// button or Escape.
 fn banner(st: &St, ui: &Ui) -> El {
-    let unit = ui.theme().spacing.unit;
     let e = st.error;
+    let u = ui.clone();
+    remedy_ui::show(ui, move || e.with(Option::is_some), move || banner_bar(e, &u)).el()
+}
+
+fn banner_bar(e: Signal<Option<String>>, ui: &Ui) -> El {
+    let unit = ui.theme().spacing.unit;
     let text = w::text(ui, "").variant("error")
         .grow(1.0)
         .text(move || e.get().unwrap_or_default());
@@ -172,12 +195,5 @@ fn banner(st: &St, ui: &Ui) -> El {
             }
             false
         });
-    let b2 = bar.clone();
-    bar.bind(move || {
-        let msg = e.get();
-        let _ = b2.clone().hidden(msg.is_none()).semantics(
-            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Alert)
-                .label(msg.unwrap_or_default()),
-        );
-    })
+    bar.semantics(move || remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Alert).label(e.get().unwrap_or_default()))
 }

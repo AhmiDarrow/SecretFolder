@@ -19,18 +19,17 @@ use crate::state::{self, St};
 const RECOVERY_COPY_KEEP: Duration = Duration::from_secs(30);
 const MIN_PASSWORD: usize = 12;
 
-/// Error text that follows the shared error signal; takes no space while there is none.
+/// Error text that follows the shared error signal; there (and taking room) only while there
+/// is one.
 pub fn error_line(st: &St, ui: &Ui) -> El {
     let e = st.error;
-    let label = w::text(ui, "").variant("error").text(move || e.get().unwrap_or_default());
-    let l2 = label.clone();
-    label.bind(move || {
-        let msg = e.get();
-        let _ = l2.clone().hidden(msg.is_none()).semantics(
-            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Alert)
-                .label(msg.unwrap_or_default()),
-        );
+    let u = ui.clone();
+    remedy_ui::show(ui, move || e.with(Option::is_some), move || {
+        w::text(&u, "").variant("error").text(move || e.get().unwrap_or_default()).semantics(move || {
+            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Alert).label(e.get().unwrap_or_default())
+        })
     })
+    .el()
 }
 
 /// A button whose label follows `f`.
@@ -45,10 +44,12 @@ pub fn fineprint(ui: &Ui, s: &str) -> El {
     w::text(ui, s).variant("muted").style(StylePatch::new().text_size(ui.theme().type_scale.small))
 }
 
-/// The centered card every gate screen sits in, with the app's mark.
+/// The centered card every gate screen sits in, with the app's mark; it scrolls when the
+/// window is shorter than the card (Inter's line height makes the setup card taller than the
+/// smallest window).
 fn card(ui: &Ui, content: El) -> El {
     let unit = ui.theme().spacing.unit;
-    w::column(ui)
+    let inner = w::column(ui)
         .grow(1.0)
         .fill_width()
         .align(Align::Center)
@@ -59,7 +60,8 @@ fn card(ui: &Ui, content: El) -> El {
                 .width(420.0)
                 .layout(|l| l.max_width = remedy_ui::layout::Length::Percent(1.0))
                 .child(content),
-        )
+        );
+    w::scroll(ui).grow(1.0).fill_width().child(inner)
 }
 
 /// Setup (new vault) or unlock (password or recovery key).

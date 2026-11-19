@@ -56,6 +56,10 @@ screenshots in `port-evidence/` (`before/` is the shipped UI, `after/` is Remedy
 ## App-wide
 
 - [x] Tray icon (the shipped 32 px icon) with Show, Lock and Quit. Clicking it shows the window.
+- [x] Window icon: the shipped app icon (`src-tauri/icons/128x128@2x.png`) in the taskbar, title bar and Alt+Tab, as the Tauri window had (`WindowSpec::icon`).
+- [x] Type: Inter, as shipped: the same Fontsource 5.3.0 WOFF2 files (weights 400 to 800, all seven script subsets) in `remedyui/assets/fonts/inter/`, loaded by the engine and first in the theme's families (`remedyui/src/fonts.rs`).
+- [x] Copies out of the text editor (Ctrl+C, Ctrl+X) go to the secret clipboard like the Copy button: kept out of history, cleared after 30 s (`TextField::copy_as_secret`). The shipped editor made ordinary copies; this closes that.
+- [x] Error lines, the error banner, the empty-folder hint and the ".." row exist only while they apply and take no room otherwise (the engine's `show`; no app-side hiding).
 - [x] Window hidden from screen capture. Closing it hides it to the tray. Single instance.
 - [x] Idle lock (real input only) plus the vault's own idle clock. Locking clears a copied secret.
 - [x] Brand: the shipped dark palette with the amber accent as a theme, and the shipped mark.
@@ -63,9 +67,8 @@ screenshots in `port-evidence/` (`before/` is the shipped UI, `after/` is Remedy
 
 ## Not carried over (with reason)
 
-- The Inter typeface: the port uses RemedyUI's bundled type (the shared Remedy look). The shipped Inter came as web-font files, which the engine does not load.
 - Localization: the shipped app is English only. The port keeps English.
-- Kind icons come from the engine's icon set, not emoji. Emoji depend on the system's fonts.
+- Kind icons come from the engine's icon set, not emoji. Emoji depend on the system's fonts. Folders, text, images and other files each have their own (`Icon::Folder`, `Icon::Note`, `Icon::Image`, `Icon::File`).
 
 ## Targets
 
