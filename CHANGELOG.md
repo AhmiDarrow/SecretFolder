@@ -5,6 +5,27 @@ All notable changes to SecretFolder are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-11-23
+
+SecretFolder 1.0 has a new interface built on RemedyUI, and runs on Linux as well as Windows. Your vault, master password, recovery key and language are the same.
+
+Hi I'm Ahmi, hope this helps!
+
+### Changed
+
+- **New interface on RemedyUI.** The Tauri and React app is gone. SecretFolder is now one native Rust program: no web view, no JavaScript. The vault, crypto and on-disk format are the same code as 0.2.0, so there is no migration.
+- All eleven languages from 0.2.0, the language you picked, the explorer, settings, tray and signed updates carry over.
+- Copies out of the text editor (Ctrl+C, Ctrl+X) are kept out of clipboard history and cleared after 30 seconds, like the Copy button.
+
+### Added
+
+- **Linux (x86-64).** Runs on distributions with glibc 2.28 or newer (Debian 10, RHEL 8 and its rebuilds, Ubuntu 20.04 and later). Install with `tar -xzf SecretFolder-1.0.0-linux-x86_64.tar.gz --strip-components=1 -C ~/.local` (the program, a menu entry and the icon). The vault is kept in `~/.local/share/com.ahmi.secretfolder`. Later updates install from **About → Check for updates**.
+
+### Install and update
+
+- Windows: `SecretFolder_1.0.0_x64-setup.exe`. It takes over an earlier SecretFolder install (0.1.x and 0.2.0, the setup or the MSI) and leaves the vault in `%APPDATA%\com.ahmi.secretfolder` alone.
+- Already installed on Windows: **About → Check for updates → Install & restart**.
+
 ## [0.2.0] — 2026-11-15
 
 Now available in Spanish, French, German, Portuguese (Brazil), Italian, Russian, Polish, Japanese, Korean and Chinese (Simplified). Apps use your system language by default; change it any time in Settings → Language.
