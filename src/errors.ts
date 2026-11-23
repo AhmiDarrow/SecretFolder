@@ -1,3 +1,6 @@
+import { getLocale } from "./i18n";
+import { translateBackendError } from "./i18n/backendErrors";
+
 /**
  * Normalize thrown values from Tauri invoke / DOM into a short user-facing string.
  * Avoids "[object Object]" when the runtime throws a plain payload.
@@ -36,4 +39,9 @@ export function formatError(err: unknown): string {
   }
   const s = String(err);
   return s === "[object Object]" ? "Something went wrong." : s;
+}
+
+/** formatError, then map known English backend text into the active locale. */
+export function formatUserError(err: unknown): string {
+  return translateBackendError(getLocale(), formatError(err));
 }

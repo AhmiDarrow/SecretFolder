@@ -341,14 +341,73 @@ pub fn max_file_bytes() -> u64 {
     MAX_FILE_BYTES
 }
 
-/// Show main window (tray).
+/// Show main window (tray). Hidden CI runs never focus the desktop.
 #[tauri::command]
 pub fn show_main_window(app: AppHandle) -> AppResult<()> {
+    if crate::prefs::ci_enabled() {
+        return Ok(());
+    }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BootInfo {
+    pub saved_locale: Option<String>,
+    pub env_locale: Option<String>,
+    pub ci: bool,
+}
+
+#[tauri::command]
+pub fn boot_info(state: State<'_, AppState>) -> BootInfo {
+    let saved_locale = state
+        .vault
+        .lock()
+        .ok()
+        .and_then(|vault| crate::prefs::read_ui_locale(vault.data_root()));
+    BootInfo {
+        saved_locale,
+        env_locale: crate::prefs::env_locale(),
+        ci: crate::prefs::ci_enabled(),
+    }
+}
+
+#[tauri::command]
+pub fn set_ui_locale(state: State<'_, AppState>, locale: String) -> AppResult<()> {
+    let vault = state
+        .vault
+        .lock()
+        .map_err(|_| AppError::Message("vault lock poisoned".into()))?;
+    crate::prefs::write_ui_locale(vault.data_root(), &locale)
+}
+
+#[tauri::command]
+pub fn set_tray_labels(app: AppHandle, show: String, lock: String, quit: String) -> AppResult<()> {
+    if crate::prefs::ci_enabled() {
+        return Ok(());
+    }
+    crate::install_tray(&app, &show, &lock, &quit).map_err(|e| AppError::Message(e.to_string()))
+}
+
+/// Headless smoke: write the UI text, then exit. No-op outside CI.
+#[tauri::command]
+pub fn ci_report(app: AppHandle, text: String) -> AppResult<()> {
+    if !crate::prefs::ci_enabled() {
+        return Ok(());
+    }
+    if let Ok(path) = std::env::var("SECRETFOLDER_CI_OUT") {
+        let path = path.trim();
+        if !path.is_empty() {
+            let _ = std::fs::write(path, text);
+        }
+    }
+    crate::request_exit();
+    app.exit(0);
     Ok(())
 }
 

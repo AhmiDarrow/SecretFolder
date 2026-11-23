@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ItemDetail, ItemPreview, VaultStatus } from "./types";
 
+export interface BootInfo {
+  savedLocale: string | null;
+  envLocale: string | null;
+  ci: boolean;
+}
+
 /** Thin invoke wrappers — names match screen call sites. */
 export const api = {
   status: () => invoke<VaultStatus>("get_status"),
@@ -72,6 +78,12 @@ export const api = {
   hideMain: () => invoke<void>("hide_main_window"),
   quitApp: () => invoke<void>("quit_app"),
   openExternal: (url: string) => invoke<void>("open_external_url", { url }),
+
+  bootInfo: () => invoke<BootInfo>("boot_info"),
+  setUiLocale: (locale: string) => invoke<void>("set_ui_locale", { locale }),
+  setTrayLabels: (show: string, lock: string, quit: string) =>
+    invoke<void>("set_tray_labels", { show, lock, quit }),
+  ciReport: (text: string) => invoke<void>("ci_report", { text }),
 };
 
 /** Read a browser File as base64 (no data: prefix). */
