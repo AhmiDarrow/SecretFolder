@@ -20,3 +20,7 @@ registry = ['Software\ahmi\SecretFolder']
 mutex = "com.ahmi.secretfolder-sim"
 # Every release also shipped SecretFolder_<version>_x64_en-US.msi.
 msi_name = "SecretFolder"
+
+[linux]
+# The oldest glibc the Linux build runs on (Debian 10, RHEL 8, Ubuntu 20.04 and later).
+glibc = "2.28"
