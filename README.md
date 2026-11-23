@@ -1,12 +1,12 @@
 # SecretFolder
 
-**Encrypted folder vault for Windows** — the feel of a local file explorer, with **secrets safe at rest**.
+**Encrypted folder vault for Windows and Linux** — the feel of a local file explorer, with **secrets safe at rest**.
 
 Use it for recovery codes, exports, screenshots of secrets, notes, and anything you would not trust to a plain folder or synced drive.
 
 [![CI](https://github.com/AhmiDarrow/SecretFolder/actions/workflows/ci.yml/badge.svg)](https://github.com/AhmiDarrow/SecretFolder/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](https://github.com/AhmiDarrow/SecretFolder/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6)](https://github.com/AhmiDarrow/SecretFolder/releases)
 [![Built with RemedyUI](https://img.shields.io/badge/built%20with-RemedyUI-8A2BE2)](#built-with-remedyui)
 
 <p align="center">
@@ -61,11 +61,15 @@ RemedyUI is not public yet.
 
 ### Prebuilt (recommended)
 
-Download the latest Windows installer from  
-**[Releases](https://github.com/AhmiDarrow/SecretFolder/releases/latest)**  
-(`SecretFolder_<version>_x64-setup.exe`).
+Downloads are on **[Releases](https://github.com/AhmiDarrow/SecretFolder/releases/latest)**.
 
-It is a per-user install (no administrator rights) with **Start Menu** and **Desktop** shortcuts. It takes over an earlier SecretFolder install (0.1.x and 0.2.0, including the MSI) and keeps your vault.
+**Windows 10/11:** `SecretFolder_<version>_x64-setup.exe`. It is a per-user install (no administrator rights) with **Start Menu** and **Desktop** shortcuts. It takes over an earlier SecretFolder install (0.1.x and 0.2.0, including the MSI) and keeps your vault.
+
+**Linux (x86-64, glibc 2.28 or newer: Debian 10, RHEL 8, Ubuntu 20.04 and later):** `SecretFolder-<version>-linux-x86_64.tar.gz`. Unpack it into `~/.local` (or `/usr/local`) to get the program, a menu entry and the icon:
+
+```bash
+tar -xzf SecretFolder-<version>-linux-x86_64.tar.gz --strip-components=1 -C ~/.local
+```
 
 Installed builds can update themselves: **About → Check for updates**, then **Install & restart** downloads the next signed release from GitHub and relaunches the app.
 
@@ -78,7 +82,7 @@ cd SecretFolder/remedyui
 cargo run --release
 ```
 
-**Requirements:** Windows 10/11, Rust stable.
+**Requirements:** Windows 10/11 or Linux, Rust stable. Linux packages for older glibc are built with `cargo remedy package --target linux` (cargo-zigbuild).
 
 ## Quick start
 
@@ -91,10 +95,12 @@ cargo run --release
 ## Data layout
 
 ```
-%APPDATA%\com.ahmi.secretfolder\
+%APPDATA%\com.ahmi.secretfolder\          (Windows)
+~/.local/share/com.ahmi.secretfolder/     (Linux)
   vault.json          # index + KDF params (encrypted names / metadata)
   vault.json.bak      # last-known-good sibling before each replace
   blobs\              # encrypted item payloads
+  ui.json             # interface language (beside the vault, not in it)
 ```
 
 - **Encrypted:** item names, content blobs  
@@ -141,7 +147,7 @@ cargo run             # the app
 ## CI & releases
 
 - **CI** (`.github/workflows/ci.yml`) — on push/PR to `main`: frontend tests + Vite build, Rust fmt + tests (Windows).
-- **Releases** — the Windows installer is built and tested locally with `cargo remedy package`, then uploaded to a draft release. The **Release** workflow (manual, with the tag) signs it with the updater key (repo secret `TAURI_SIGNING_PRIVATE_KEY`, the key every version since 0.1.2 trusts) and writes `latest.json`.
+- **Releases** — the Windows installer and the Linux package are built and tested locally with `cargo remedy package`, then uploaded to a draft release. **Release check** starts the Linux build on Debian 10, Rocky Linux 8 and Ubuntu 20.04, and runs the Windows installer over installed 0.1.5 and 0.2.0, checking the vault byte for byte. The **Release** workflow (manual, with the tag) signs it with the updater key (repo secret `TAURI_SIGNING_PRIVATE_KEY`, the key every version since 0.1.2 trusts) and writes `latest.json`.
 
 ## Stack
 
@@ -173,7 +179,7 @@ Hi I'm Ahmi, hope this helps!
 - Releases: [github.com/AhmiDarrow/SecretFolder/releases](https://github.com/AhmiDarrow/SecretFolder/releases)
 - Support: [patreon.com/cw/AhmiDarrow](https://www.patreon.com/cw/AhmiDarrow) — thank you!
 
-SecretFolder is a small, local-first Windows app for people who need a real at-rest vault for files — text, images, and small binaries — without cloud accounts. Built with RemedyUI so the whole app, interface and crypto alike, is Rust.
+SecretFolder is a small, local-first app for Windows and Linux, for people who need a real at-rest vault for files — text, images, and small binaries — without cloud accounts. Built with RemedyUI so the whole app, interface and crypto alike, is Rust.
 
 ## License
 
