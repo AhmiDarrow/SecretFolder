@@ -1,0 +1,109 @@
+name: Release check
+
+# Before a release is published: the packages in its draft (built on the owner's PC with
+# `cargo remedy package`) are installed and started on fresh machines.
+#
+# - Linux: the .tar.gz unpacked as the README says and started on Debian 10, Rocky Linux 8
+#   (RHEL 8) and Ubuntu 20.04, the oldest systems it supports, on a copy of the 0.2.0 test vault.
+# - Windows: installed 0.1.5 and 0.2.0 (setup and MSI) updated by the new installer while they
+#   run; the vault and ui.json must come through byte for byte, and the new app must start in
+#   the vault's saved language.
+#
+# It runs on pull requests to main (for the version in remedyui/Cargo.toml) and by hand.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Draft release to check (e.g. v1.0.0). Empty: remedyui/Cargo.toml's version."
+        required: false
+        default: ""
+
+permissions:
+  # Drafts are only visible with write access.
+  contents: write
+
+concurrency:
+  group: release-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Start on ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:10", "rockylinux:8", "ubuntu:20.04"]
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch the Linux package from the draft
+        run: |
+          version=$(grep -m1 '^version' remedyui/Cargo.toml | cut -d'"' -f2)
+          tag="${{ github.event.inputs.tag }}"
+          tag="${tag:-v$version}"
+          [ "${tag#v}" = "$version" ] || { echo "::error::$tag is not remedyui/Cargo.toml's version ($version)"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          mkdir dist
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -D dist -p "SecretFolder-${version}-linux-x86_64.tar.gz"
+          ls -l dist
+
+      - name: Install and start
+        run: |
+          docker run --rm -e VERSION -v "$PWD:/w" -w /w "${{ matrix.image }}" \
+            bash .github/release-check/linux-start.sh
+
+  windows:
+    name: Windows over ${{ matrix.old }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - old: SecretFolder_0.1.5_x64-setup.exe
+            tag: v0.1.5
+            fixture: vault-v0.1.5
+            # 0.1.5 had no language choice: the system's (English here).
+            expect: "Unlock SecretFolder"
+          - old: SecretFolder_0.2.0_x64-setup.exe
+            tag: v0.2.0
+            fixture: vault-v0.2.0
+            # The fixture's ui.json saved German.
+            expect: "SecretFolder entsperren"
+          - old: SecretFolder_0.2.0_x64_en-US.msi
+            tag: v0.2.0
+            fixture: vault-v0.2.0
+            expect: "SecretFolder entsperren"
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch the old and the new installer
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version' remedyui/Cargo.toml | cut -d'"' -f2)
+          tag="${{ github.event.inputs.tag }}"
+          tag="${tag:-v$version}"
+          [ "${tag#v}" = "$version" ] || { echo "::error::$tag is not remedyui/Cargo.toml's version ($version)"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          mkdir -p dist old
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -D dist -p "SecretFolder_${version}_x64-setup.exe"
+          gh release download "${{ matrix.tag }}" -R "$GITHUB_REPOSITORY" -D old -p "${{ matrix.old }}"
+          ls -l dist old
+
+      - name: Update the old install
+        shell: pwsh
+        run: |
+          ./.github/release-check/windows-upgrade.ps1 `
+            -OldInstaller "$PWD\old\${{ matrix.old }}" `
+            -NewSetup "$PWD\dist\SecretFolder_${env:VERSION}_x64-setup.exe" `
+            -Fixture "$PWD\remedyui\tests\fixtures\${{ matrix.fixture }}" `
+            -ExpectName "${{ matrix.expect }}"

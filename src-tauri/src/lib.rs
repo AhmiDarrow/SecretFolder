@@ -1,6 +1,7 @@
 mod commands;
 mod crypto;
 mod error;
+mod policy;
 mod prefs;
 mod vault;
 

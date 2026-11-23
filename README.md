@@ -1,12 +1,13 @@
 # SecretFolder
 
-**Encrypted folder vault for Windows** — the feel of a local file explorer, with **secrets safe at rest**.
+**Encrypted folder vault for Windows and Linux** — the feel of a local file explorer, with **secrets safe at rest**.
 
 Use it for recovery codes, exports, screenshots of secrets, notes, and anything you would not trust to a plain folder or synced drive.
 
 [![CI](https://github.com/AhmiDarrow/SecretFolder/actions/workflows/ci.yml/badge.svg)](https://github.com/AhmiDarrow/SecretFolder/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](https://github.com/AhmiDarrow/SecretFolder/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6)](https://github.com/AhmiDarrow/SecretFolder/releases)
+[![Built with RemedyUI](https://img.shields.io/badge/built%20with-RemedyUI-8A2BE2)](#built-with-remedyui)
 
 <p align="center">
   <img src="src-tauri/icons/128x128.png" alt="SecretFolder icon" width="96" height="96" />
@@ -16,6 +17,10 @@ Use it for recovery codes, exports, screenshots of secrets, notes, and anything 
   <strong>Local-only · Master password · Folders + explorer · System tray</strong>
 </p>
 
+<p align="center">
+  <strong>Built with <a href="#built-with-remedyui">RemedyUI</a></strong>: one Rust app, from the pixels to the crypto.
+</p>
+
 ---
 
 ## Why
@@ -23,6 +28,16 @@ Use it for recovery codes, exports, screenshots of secrets, notes, and anything 
 Plain folders and cloud drives are great for everyday files and terrible for secrets (readable on disk, backup sprawl, sync surface). **SecretFolder** keeps a familiar explorer UX and encrypts names and contents at rest.
 
 Sibling product to [SecretSticky](https://github.com/AhmiDarrow/SecretSticky) (encrypted sticky notes): same crypto DNA and dark chrome, different job — **files**, not stickies. Separate app data, AAD namespace, identifier, and release channel; never share vaults or keys between the two.
+
+## Built with RemedyUI
+
+Since 1.0, SecretFolder runs on **RemedyUI**, Ahmi Darrow's own Rust UI engine. The explorer, the image preview, the tray, text rendering, accessibility and the signed updater all come from RemedyUI, so the whole app is one native Rust program:
+
+- **No web view, no browser engine, no JavaScript** between you and your files. The 0.x releases were a Tauri and React app; 1.0 replaced all of it.
+- **One language end to end**: the interface and the vault crypto live in the same Rust process, with the same memory handling (`zeroize`).
+- **Same engine as [SecretSticky](https://github.com/AhmiDarrow/SecretSticky)** and [Alex's Craft Calc](https://github.com/AhmiDarrow/Alexs-Craft-Calc).
+
+RemedyUI is not public yet.
 
 ## Features
 
@@ -46,25 +61,28 @@ Sibling product to [SecretSticky](https://github.com/AhmiDarrow/SecretSticky) (e
 
 ### Prebuilt (recommended)
 
-Download the latest Windows installer from  
-**[Releases](https://github.com/AhmiDarrow/SecretFolder/releases/latest)**  
-(NSIS `.exe` setup; MSI when available).
+Downloads are on **[Releases](https://github.com/AhmiDarrow/SecretFolder/releases/latest)**.
 
-The NSIS installer creates **Start Menu** and **Desktop** shortcuts that use the folder+lock icon (same mark as the taskbar and tray).
+**Windows 10/11:** `SecretFolder_<version>_x64-setup.exe`. It is a per-user install (no administrator rights) with **Start Menu** and **Desktop** shortcuts. It takes over an earlier SecretFolder install (0.1.x and 0.2.0, including the MSI) and keeps your vault.
+
+**Linux (x86-64, glibc 2.28 or newer: Debian 10, RHEL 8, Ubuntu 20.04 and later):** `SecretFolder-<version>-linux-x86_64.tar.gz`. Unpack it into `~/.local` (or `/usr/local`) to get the program, a menu entry and the icon:
+
+```bash
+tar -xzf SecretFolder-<version>-linux-x86_64.tar.gz --strip-components=1 -C ~/.local
+```
 
 Installed builds can update themselves: **About → Check for updates**, then **Install & restart** downloads the next signed release from GitHub and relaunches the app.
 
 ### From source
 
+SecretFolder 1.0 and later is the Rust app in `remedyui/`, built on RemedyUI. RemedyUI is not public yet, so building from source needs a checkout of it: `remedyui/Cargo.toml` finds it in a `Projects/RemedyUI` folder next to the `SecretFolder` folder.
+
 ```bash
-git clone https://github.com/AhmiDarrow/SecretFolder.git
-cd SecretFolder
-npm install
-npm run tauri:dev      # development
-npm run tauri:build    # release installers under src-tauri/target/release/bundle/
+cd SecretFolder/remedyui
+cargo run --release
 ```
 
-**Requirements:** Windows 10/11, Node 20+, Rust stable, WebView2.
+**Requirements:** Windows 10/11 or Linux, Rust stable. Linux packages for older glibc are built with `cargo remedy package --target linux` (cargo-zigbuild).
 
 ## Quick start
 
@@ -77,10 +95,12 @@ npm run tauri:build    # release installers under src-tauri/target/release/bundl
 ## Data layout
 
 ```
-%APPDATA%\com.ahmi.secretfolder\
+%APPDATA%\com.ahmi.secretfolder\          (Windows)
+~/.local/share/com.ahmi.secretfolder/     (Linux)
   vault.json          # index + KDF params (encrypted names / metadata)
   vault.json.bak      # last-known-good sibling before each replace
   blobs\              # encrypted item payloads
+  ui.json             # interface language (beside the vault, not in it)
 ```
 
 - **Encrypted:** item names, content blobs  
@@ -111,54 +131,41 @@ See [SECURITY.md](SECURITY.md) for the full threat model and vulnerability repor
 ## Development
 
 ```bash
-npm install
-npm run tauri:dev
-
-# Tests
-npm test              # TypeScript check + Vitest
-npm run test:rust     # Rust crypto / vault
-npm run test:all      # both
-npm run build         # Vite production bundle only
+cd remedyui
+cargo test            # vault round trips with the shipped versions, every screen
+cargo run             # the app
 ```
 
 | Path | Role |
 |------|------|
-| `src/` | React UI (unlock, explorer, about) |
-| `src-tauri/src/crypto.rs` | KDF + AEAD |
-| `src-tauri/src/vault.rs` | On-disk format + session |
-| `src-tauri/src/commands.rs` | Tauri IPC, tray, dialogs |
-| `.github/workflows/` | CI + tag release builds |
+| `remedyui/` | The app (1.0+): unlock, explorer, settings, tray, updater, on RemedyUI |
+| `remedyui/tests/fixtures/` | Vaults made by the shipped 0.1.0, 0.1.1, 0.1.5, 0.1.7 and 0.2.0 code, for round-trip tests |
+| `src-tauri/src/crypto.rs`, `vault.rs` | Crypto and on-disk format, shared by the app |
+| `src/`, `src-tauri/` | The Tauri app that shipped 0.1.x and 0.2.0 |
+| `.github/workflows/` | CI, and signing of releases |
 
 ## CI & releases
 
 - **CI** (`.github/workflows/ci.yml`) — on push/PR to `main`: frontend tests + Vite build, Rust fmt + tests (Windows).
-- **Release** (`.github/workflows/release.yml`) — on tag `v*` (or manual dispatch): test gate, then signed Tauri NSIS/MSI + updater `latest.json`, published (non-draft) GitHub Release.
-
-```bash
-# After bumping version in package.json, Cargo.toml, tauri.conf.json + CHANGELOG
-git tag v<version>
-git push origin v<version>
-```
-
-Requires repo secret `TAURI_SIGNING_PRIVATE_KEY` (see CONTRIBUTING).
+- **Releases** — the Windows installer and the Linux package are built and tested locally with `cargo remedy package`, then uploaded to a draft release. **Release check** starts the Linux build on Debian 10, Rocky Linux 8 and Ubuntu 20.04, and runs the Windows installer over installed 0.1.5 and 0.2.0, checking the vault byte for byte. The **Release** workflow (manual, with the tag) signs it with the updater key (repo secret `TAURI_SIGNING_PRIVATE_KEY`, the key every version since 0.1.2 trusts) and writes `latest.json`.
 
 ## Stack
 
-- **Tauri 2** + **React 19** + **TypeScript** + **Vite**
-- **Rust:** `argon2`, `chacha20poly1305`, `zeroize`, `serde`
-- **Font:** Inter via `@fontsource/inter` (self-hosted WOFF2, no CDN)
-- **Updates:** `tauri-plugin-updater` + `tauri-plugin-process` (signed GitHub Releases)
+- **Rust** + **RemedyUI** (windows, text, images, tray, accessibility, updates)
+- **Crypto:** `argon2`, `chacha20poly1305`, `zeroize`
+- **Font:** Inter, bundled
+- **Updates:** minisign-signed GitHub Releases
 
 ## Auto-update
 
-Release builds ship with the Tauri updater plugin:
+Release builds check GitHub Releases for updates:
 
-1. CI signs NSIS/MSI updater artifacts with a minisign key (`TAURI_SIGNING_PRIVATE_KEY` repo secret).
+1. The Release workflow signs the installer with a minisign key (`TAURI_SIGNING_PRIVATE_KEY` repo secret).
 2. Each **published** (non-draft) release ships `latest.json` next to the installers.
 3. The app polls `…/releases/latest/download/latest.json`, verifies the signature with the **public** key embedded in the binary, then installs (About → Check for updates → Install & restart).
 4. Before install, the app **locks the vault** (drops session keys). The updater only replaces files under the install directory — **never** `%APPDATA%\com.ahmi.secretfolder`.
 
-Dev (`tauri dev`) has no installer channel — use a packaged build to exercise updates.
+A `cargo run` build has no installer channel — use a packaged build to exercise updates.
 
 Vault data never leaves the machine; only update checks hit GitHub. Draft GitHub releases break the `latest` channel — CI publishes releases non-draft.
 
@@ -172,7 +179,7 @@ Hi I'm Ahmi, hope this helps!
 - Releases: [github.com/AhmiDarrow/SecretFolder/releases](https://github.com/AhmiDarrow/SecretFolder/releases)
 - Support: [patreon.com/cw/AhmiDarrow](https://www.patreon.com/cw/AhmiDarrow) — thank you!
 
-SecretFolder is a small, local-first Windows app for people who need a real at-rest vault for files — text, images, and small binaries — without cloud accounts. Built with Tauri so the UI stays light and the crypto stays in Rust.
+SecretFolder is a small, local-first app for Windows and Linux, for people who need a real at-rest vault for files — text, images, and small binaries — without cloud accounts. Built with RemedyUI so the whole app, interface and crypto alike, is Rust.
 
 ## License
 

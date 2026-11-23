@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SecretFolder (before-evidence harness)</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Stands in for Tauri's IPC so the shipped React UI renders in a browser with sample
+         data only: no vault, no real notes. Then the shipped entry point, unchanged. -->
+    <script type="module" src="./mock-tauri.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
