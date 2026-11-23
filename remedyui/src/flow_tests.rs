@@ -915,13 +915,14 @@ fn tree_of(v: &mut crate::vault::Vault, parent: Option<String>, prefix: &str, ou
     }
 }
 
-/// Vaults written by shipped releases (0.1.0, the first, and 0.1.7, the last Tauri release)
+/// Vaults written by shipped releases (0.1.0, the first; 0.1.7; 0.2.0, the last Tauri release)
 /// open in this build through `SECRETFOLDER_VAULT`, show their folders and files, take edits,
 /// and read back afterwards through the shipped vault code with nothing lost. The fixtures and
 /// their expected contents were made by `compat/shipped.sh` with the release tags' own code.
+/// 0.2.0 also keeps `ui.json` (its language) beside the vault; it is left byte for byte.
 #[test]
 fn shipped_vaults_open_edit_and_reopen_without_loss() {
-    for (tag, pw) in [("v0.1.0", "old-pass9"), ("v0.1.7", PASSWORD)] {
+    for (tag, pw) in [("v0.1.0", "old-pass9"), ("v0.1.7", PASSWORD), ("v0.2.0", PASSWORD)] {
         shipped_vault_round_trip(tag, pw);
     }
 }
@@ -932,6 +933,11 @@ fn shipped_vault_round_trip(tag: &str, pw: &str) {
     let dir = tempfile::tempdir().expect("temp dir");
     let root = dir.path().join("vault");
     copy_tree(&fixtures.join(format!("vault-{tag}")), &root);
+    // Files the shipped app keeps beside the vault that this build has no business changing.
+    let beside: Vec<(String, Vec<u8>)> = ["ui.json"]
+        .iter()
+        .filter_map(|n| std::fs::read(root.join(n)).ok().map(|b| ((*n).to_owned(), b)))
+        .collect();
     let recovery = std::fs::read_to_string(fixtures.join(format!("{tag}.recovery"))).expect("recovery key");
     let expected: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(fixtures.join(format!("vault-{tag}.expected.json"))).expect("expected"),
@@ -1045,6 +1051,9 @@ fn shipped_vault_round_trip(tag: &str, pw: &str) {
             }
         }
         v.lock();
+    }
+    for (name, bytes) in &beside {
+        assert_eq!(&std::fs::read(root.join(name)).expect("still there"), bytes, "{tag}: {name} untouched");
     }
     if let Some(out) = std::env::var_os("SECRETFOLDER_COMPAT_OUT") {
         copy_tree(&root, &std::path::PathBuf::from(out).join(format!("after-{tag}")));
