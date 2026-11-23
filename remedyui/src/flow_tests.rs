@@ -915,14 +915,23 @@ fn tree_of(v: &mut crate::vault::Vault, parent: Option<String>, prefix: &str, ou
     }
 }
 
-/// Vaults written by shipped releases (0.1.0, the first; 0.1.7; 0.2.0, the last Tauri release)
-/// open in this build through `SECRETFOLDER_VAULT`, show their folders and files, take edits,
-/// and read back afterwards through the shipped vault code with nothing lost. The fixtures and
-/// their expected contents were made by `compat/shipped.sh` with the release tags' own code.
-/// 0.2.0 also keeps `ui.json` (its language) beside the vault; it is left byte for byte.
+/// Vaults written by shipped releases open in this build through `SECRETFOLDER_VAULT`, show
+/// their folders and files, take edits, and read back afterwards through the shipped vault
+/// code with nothing lost. There is one per release whose vault code changed: 0.1.0 (the
+/// first), 0.1.1 (hardening), 0.1.5 (atomic replace and `.bak`), 0.1.7 (validated saves) and
+/// 0.2.0 (the last Tauri release). The fixtures and their expected contents were made by
+/// `compat/shipped.sh` / `compat/fixture.sh` with the release tags' own code; all are made-up
+/// test vaults. 0.2.0 also keeps `ui.json` (its language) beside the vault; it is left byte for
+/// byte.
 #[test]
 fn shipped_vaults_open_edit_and_reopen_without_loss() {
-    for (tag, pw) in [("v0.1.0", "old-pass9"), ("v0.1.7", PASSWORD), ("v0.2.0", PASSWORD)] {
+    for (tag, pw) in [
+        ("v0.1.0", "old-pass9"),
+        ("v0.1.1", PASSWORD),
+        ("v0.1.5", PASSWORD),
+        ("v0.1.7", PASSWORD),
+        ("v0.2.0", PASSWORD),
+    ] {
         shipped_vault_round_trip(tag, pw);
     }
 }
