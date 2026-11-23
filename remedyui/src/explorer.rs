@@ -78,14 +78,10 @@ fn build(st: &St, ui: &Ui, win: &Window) {
 /// The brand: the mark, the name, and how many items the vault holds.
 fn brand(st: &St, ui: &Ui) -> El {
     let unit = ui.theme().spacing.unit;
-    let status = st.status;
+    let (status, l) = (st.status, st.lang);
     let count = w::text(ui, "").variant("muted").nowrap().text(move || {
         let n = status.get().map_or(0, |s| s.item_count);
-        if n == 1 {
-            "1 item".to_owned()
-        } else {
-            format!("{n} items")
-        }
+        crate::lang::count_in(&l.id(), "items", n as u64)
     });
     w::row(ui)
         .gap(unit * 2.0)
@@ -101,23 +97,23 @@ fn brand(st: &St, ui: &Ui) -> El {
 
 fn unlocked(st: &St, ui: &Ui, win: &Window, tab: Signal<Option<String>>) -> El {
     let unit = ui.theme().spacing.unit;
-    let tabs = Signal::new(vec![
-        Tab {
-            id: "files".into(),
-            title: "Files".into(),
-            closable: false,
-        },
-        Tab {
-            id: "settings".into(),
-            title: "Settings".into(),
-            closable: false,
-        },
-        Tab {
-            id: "about".into(),
-            title: "About".into(),
-            closable: false,
-        },
-    ]);
+    let l = st.lang;
+    let tab_list = move |id: &str| {
+        ["files", "settings", "about"]
+            .iter()
+            .map(|t| Tab {
+                id: (*t).into(),
+                title: crate::lang::tr(id, &format!("nav.{t}")),
+                closable: false,
+            })
+            .collect::<Vec<_>>()
+    };
+    let tabs = Signal::new(tab_list(&l.now()));
+    // The tab titles follow a language switch.
+    let _ = remedy_ui::reactive::Effect::new(move || {
+        let id = l.id();
+        untrack(|| tabs.set(tab_list(&id)));
+    });
     let (s1, w1) = (st.clone(), win.clone());
     let header = w::row(ui)
         .fill_width()
@@ -126,14 +122,14 @@ fn unlocked(st: &St, ui: &Ui, win: &Window, tab: Signal<Option<String>>) -> El {
         .padding(Insets::symmetric(unit * 2.0, unit * 4.0))
         .style(remedy_ui::style::StylePatch::new().background(ui.theme().colors.panel))
         .child(brand(st, ui).grow(1.0))
-        .child(nav::tabs(ui, "Sections", tabs, tab, |_| {}))
+        .child(nav::tabs(ui, l.t("port.sections"), tabs, tab, |_| {}))
         .child(
             w::row(ui)
                 .gap(unit)
                 .justify(Justify::End)
                 .grow(1.0)
-                .child(w::button(ui, "Lock", move || state::lock(&s1)).variant("quiet"))
-                .child(w::button(ui, "Hide", move || w1.set_visible(false)).variant("quiet")),
+                .child(w::button(ui, l.k("nav.lock"), move || state::lock(&s1)).variant("quiet"))
+                .child(w::button(ui, l.k("nav.hide"), move || w1.set_visible(false)).variant("quiet")),
         );
     let body = w::column(ui)
         .grow(1.0)
@@ -168,12 +164,12 @@ fn unlocked(st: &St, ui: &Ui, win: &Window, tab: Signal<Option<String>>) -> El {
 /// The error banner under the header, there while there is an error, dismissed with its
 /// button or Escape.
 fn banner(st: &St, ui: &Ui) -> El {
-    let e = st.error;
+    let (e, l) = (st.error, st.lang);
     let u = ui.clone();
-    remedy_ui::show(ui, move || e.with(Option::is_some), move || banner_bar(e, &u)).el()
+    remedy_ui::show(ui, move || e.with(Option::is_some), move || banner_bar(e, l, &u)).el()
 }
 
-fn banner_bar(e: Signal<Option<String>>, ui: &Ui) -> El {
+fn banner_bar(e: Signal<Option<String>>, l: crate::lang::Lang, ui: &Ui) -> El {
     let unit = ui.theme().spacing.unit;
     let text = w::text(ui, "").variant("error")
         .grow(1.0)
@@ -184,7 +180,7 @@ fn banner_bar(e: Signal<Option<String>>, ui: &Ui) -> El {
         .gap(unit * 2.0)
         .padding(Insets::symmetric(unit * 2.0, unit * 4.0))
         .child(text)
-        .child(w::button(ui, "Dismiss", move || e.set(None)).variant("quiet"))
+        .child(w::button(ui, move || crate::lang::cap(&crate::lang::tr(&l.id(), "nav.dismiss")), move || e.set(None)).variant("quiet"))
         .on_key(move |k| {
             if k.pressed
                 && k.key == remedy_ui::input::Key::Escape

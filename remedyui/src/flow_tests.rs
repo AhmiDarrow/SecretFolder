@@ -59,7 +59,11 @@ impl Driver {
 
     /// The app on a system that can (or cannot) keep windows out of screen capture.
     fn on(capture_supported: bool) -> Self {
-        let dir = tempfile::tempdir().expect("temp dir");
+        Self::at(capture_supported, tempfile::tempdir().expect("temp dir"))
+    }
+
+    /// The app on the vault in `dir/vault` (a restart when the folder already holds one).
+    fn at(capture_supported: bool, dir: tempfile::TempDir) -> Self {
         let root = dir.path().join("vault");
         let slot: Rc<RefCell<Option<St>>> = Rc::default();
         let s2 = slot.clone();
@@ -631,6 +635,128 @@ fn wrong_passwords_are_throttled_and_settings_tray_and_links_work() {
     assert_eq!(d.screen(), Screen::Unlock, "locked after 30 idle minutes");
 }
 
+/// Every file under `dir` with its bytes, by path relative to `dir` (`ui.json` left out:
+/// the language is the one thing a switch may write).
+fn snapshot(dir: &std::path::Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+    let mut out: Vec<_> = walk(dir)
+        .into_iter()
+        .filter(|p| p.file_name().is_none_or(|n| n != "ui.json"))
+        .map(|p| {
+            let bytes = std::fs::read(&p).expect("read");
+            (p.strip_prefix(dir).expect("under dir").to_path_buf(), bytes)
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+fn ui_locale(dir: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join("ui.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v["locale"].as_str().map(str::to_owned)
+}
+
+/// 0.2.0's languages: the picker on the gate and in Settings switches every screen, the tray
+/// and the dialogs at once; the choice goes to `ui.json` beside the vault (other keys kept)
+/// and not one byte of the vault (`vault.json`, its `.bak`, the blobs) changes. Restarting
+/// opens in the saved language; all eleven switch and come back.
+#[test]
+fn language_switches_everything_and_never_touches_the_vault() {
+    use crate::lang::{LOCALES, count_in, tr};
+    let mut d = Driver::new();
+    let root = d._dir.path().join("vault");
+    // A first run on an English system: English, and nothing written yet.
+    assert_eq!(d.st.lang.now(), "en");
+    assert!(d.has("Create your vault"));
+    assert_eq!(ui_locale(&root), None, "the system's language is not saved before a choice");
+    // The gate has the picker, with every language in its own name.
+    assert!(d.has("Language"), "language picker on the setup card");
+    d.set_up();
+    // Some content, so the vault has blobs and a .bak to watch.
+    d.click("New folder");
+    d.type_into("Folder name", "Taxes");
+    d.click("Create");
+    d.click("New text");
+    d.type_into("Text", "pin 4711");
+    d.key(Key::Character("s".into()), Modifiers { ctrl: true, ..Modifiers::NONE });
+    // A key 0.2.0 might not know, already in ui.json: the switch must keep it.
+    std::fs::write(root.join("ui.json"), r#"{"fromNewer":7}"#).expect("ui.json");
+    let before = snapshot(&root);
+    assert!(before.iter().any(|(p, _)| p.ends_with("vault.json")), "{before:?}");
+    assert!(before.iter().any(|(p, _)| p.starts_with("blobs")), "{before:?}");
+
+    // Settings → Language → Deutsch.
+    d.click("Settings");
+    d.click("Language");
+    for (_, native) in LOCALES {
+        assert!(d.has(native), "{native} offered");
+    }
+    d.click("Deutsch");
+    d.frames(3);
+    assert_eq!(d.st.lang.now(), "de");
+    assert_eq!(ui_locale(&root).as_deref(), Some("de"), "saved beside the vault");
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("ui.json")).expect("ui.json")).expect("json");
+    assert_eq!(saved["fromNewer"], 7, "other ui.json keys kept");
+    assert_eq!(snapshot(&root), before, "switching language never writes the vault");
+
+    // Everything on screen follows at once.
+    let t = |k: &str| tr("de", k);
+    for key in ["nav.files", "nav.settings", "nav.about", "nav.lock", "nav.hide", "settings.title", "settings.changePwBtn"] {
+        assert!(d.has(&t(key)), "{key} in German");
+    }
+    d.click(&t("nav.files"));
+    for key in ["files.newText", "files.newFolder", "files.import", "port.colSize", "port.colModified"] {
+        assert!(d.has(&t(key)), "{key} in German");
+    }
+    assert!(d.has(&count_in("de", "items", 2)), "the item count in German");
+    let tray = d.host.tray().expect("tray");
+    assert_eq!(tray.menu[0].label(), t("tray.show"));
+    assert_eq!(tray.menu[3].label(), t("tray.quit"));
+    // A vault error from the shipped code reads in German too.
+    d.st.fail("vault is locked");
+    d.frames(2);
+    assert_eq!(d.error().as_deref(), Some(t("err.locked").as_str()));
+    d.st.error.set(None);
+    d.frames(1);
+    d.assert_accessible();
+
+    // Locked, the gate is German, and the vault still opens.
+    d.click(&t("nav.lock"));
+    assert_eq!(d.screen(), Screen::Unlock);
+    assert!(d.has(&t("unlock.titleUnlock")));
+    d.type_into(&t("unlock.masterPassword"), PASSWORD);
+    d.click(&t("unlock.unlock"));
+    d.until("unlock in German", |d| d.screen() == Screen::Unlocked);
+    d.frames(2);
+    let mut names = d.names();
+    names.sort();
+    assert_eq!(names.len(), 2, "{names:?}");
+
+    // Every language switches, and the vault never changes.
+    d.click(&t("nav.settings"));
+    for (id, native) in LOCALES {
+        let now = d.st.lang.now();
+        d.click(&tr(&now, "settings.language"));
+        d.click(native);
+        d.frames(2);
+        assert_eq!(d.st.lang.now(), id);
+        assert_eq!(ui_locale(&root).as_deref(), Some(id));
+        assert!(d.has(&tr(id, "settings.title")), "{id}: Settings heading");
+        assert_eq!(d.host.tray().expect("tray").menu[1].label(), tr(id, "tray.lock"), "{id}: tray");
+    }
+    assert_eq!(snapshot(&root), before, "eleven switches, the vault byte for byte the same");
+
+    // A restart opens in the saved language (the loop's last stop, zh-CN), not the system's.
+    let dir = std::mem::replace(&mut d._dir, tempfile::tempdir().expect("temp dir"));
+    drop(d);
+    let d = Driver::at(true, dir);
+    assert_eq!(d.st.lang.now(), "zh-CN", "the saved choice wins over the system's");
+    assert!(d.has(&tr("zh-CN", "unlock.titleUnlock")));
+    assert_eq!(d.host.tray().expect("tray").menu[0].label(), tr("zh-CN", "tray.show"));
+    assert_eq!(snapshot(&root), before, "starting in a saved language writes nothing");
+}
+
 fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     let mut todo = vec![dir.to_path_buf()];
@@ -968,6 +1094,22 @@ fn shipped_vault_round_trip(tag: &str, pw: &str) {
     let mut d = Driver::from_env(dir);
     unsafe { std::env::remove_var("SECRETFOLDER_VAULT") };
     assert_eq!(d.screen(), Screen::Unlock, "{tag}: an existing vault asks for its password");
+    // The language 0.2.0 saved beside the vault (German in its fixture) is the one shown;
+    // older vaults had none and start in the system's (English here). The rest of this
+    // test drives the app in English, which leaves that ui.json alone below.
+    let saved_locale = crate::prefs::read_ui_locale(&root);
+    if tag == "v0.2.0" {
+        assert_eq!(saved_locale.as_deref(), Some("de"), "{tag}: the fixture saved German");
+    }
+    let shown = saved_locale.clone().unwrap_or_else(|| "en".to_owned());
+    assert_eq!(d.st.lang.now(), shown, "{tag}: the saved language carries over");
+    assert!(d.has(&crate::lang::tr(&shown, "unlock.titleUnlock")), "{tag}: the gate in {shown}");
+    assert_eq!(d.host.tray().expect("tray").menu[0].label(), crate::lang::tr(&shown, "tray.show"), "{tag}: tray");
+    if saved_locale.is_some() {
+        // Driven in English from here; ui.json is put back byte for byte before the check.
+        d.st.lang.0.set("en".to_owned());
+        d.frames(2);
+    }
     d.type_into("Master password", pw);
     d.click("Unlock");
     d.until("unlock", |d| d.screen() == Screen::Unlocked);
