@@ -1,30 +1,42 @@
 name: Release
 
+# SecretFolder 1.0 and later is the RemedyUI build in remedyui/, packaged and tested on the
+# owner's PC (`cargo remedy package`, which builds the per-user installer from
+# remedyui/remedy.toml) and uploaded to a draft release. This job only signs that installer
+# with the updater key (repo secret TAURI_SIGNING_PRIVATE_KEY, the key every release since
+# 0.1.2 trusts) and writes latest.json, so installed 0.1.2 to 0.2.0 builds update to it.
+#
+# The installer takes over their install ([windows.replaces] in remedyui/remedy.toml: the old
+# program, its uninstaller, shortcuts and keys, plus a per-machine MSI copy) and never touches
+# the vault in %APPDATA%\com.ahmi.secretfolder. It never runs the old uninstaller, whose
+# "delete application data" box would remove that folder.
+#
+# Publishing the draft makes it Latest, which is what installed builds read.
+
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to build (e.g. v0.1.0). Leave empty to use package version."
-        required: false
-        default: ""
+        description: "Draft release to sign (e.g. v1.0.0)"
+        required: true
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.inputs.tag }}
   cancel-in-progress: false
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  build-windows:
-    name: Build Windows installer
+  sign:
+    name: Sign the installer and write latest.json
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.inputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,69 +44,55 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-
-      - name: Install frontend deps
+      - name: Install the Tauri CLI (the signer)
         run: npm ci
 
-      - name: Run tests (gate)
+      - name: Fetch the installer
         run: |
-          npm test
-          cargo test --manifest-path src-tauri/Cargo.toml
+          version="${TAG#v}"
+          [ "$version" = "$(grep -m1 '^version' remedyui/Cargo.toml | cut -d'"' -f2)" ] \
+            || { echo "::error::$TAG is not remedyui/Cargo.toml's version"; exit 1; }
+          echo "SETUP=SecretFolder_${version}_x64-setup.exe" >> "$GITHUB_ENV"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          mkdir dist
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D dist -p "SecretFolder_${version}_x64-setup.exe"
 
-      - name: Require updater signing key
-        shell: bash
-        run: |
-          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
-            echo "::error::Missing repo secret TAURI_SIGNING_PRIVATE_KEY (minisign private key for updater artifacts)."
-            echo "Generate with: npx tauri signer generate -w ~/.tauri/secretfolder.key"
-            echo "Then: gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/secretfolder.key"
-            exit 1
-          fi
-
-      - name: Build Tauri (NSIS + MSI + updater)
-        uses: tauri-apps/tauri-action@v0
+      - name: Sign
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
-          releaseName: "SecretFolder ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}"
-          releaseBody: |
-            ## SecretFolder ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
+        run: |
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "::error::Missing repo secret TAURI_SIGNING_PRIVATE_KEY"; exit 1; }
+          npx tauri signer sign "dist/$SETUP"
+          [ -s "dist/$SETUP.sig" ] || { echo "::error::no signature written"; exit 1; }
 
-            Encrypted folder vault for Windows — text, images, and small binaries behind a master password.
+      - name: Write latest.json
+        working-directory: dist
+        run: |
+          # The .sig file is already in the form latest.json carries.
+          sig=$(tr -d '\r\n' < "$SETUP.sig")
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${SETUP}"
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          entry="{ \"signature\": \"${sig}\", \"url\": \"${url}\" }"
+          # Every key points at the setup .exe: MSI installs update through it too (it removes
+          # the per-machine copy, so Windows asks for administrator rights once).
+          cat > latest.json <<EOF
+          {
+            "version": "${VERSION}",
+            "notes": "See https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md",
+            "pub_date": "${now}",
+            "platforms": {
+              "windows-x86_64": ${entry},
+              "windows-x86_64-nsis": ${entry},
+              "windows-x86_64-msi": ${entry}
+            }
+          }
+          EOF
+          cat latest.json
 
-            Hi I'm Ahmi, hope this helps!
-            - Profile: https://github.com/AhmiDarrow
-            - Repo: https://github.com/AhmiDarrow/SecretFolder
-
-            ### Install
-            - Prefer the **NSIS setup** (`.exe`) for a normal Windows install (desktop shortcut + Start Menu + taskbar icon).
-            - MSI is also attached when available.
-            - Installed builds check **GitHub Releases** for signed updates (About → Check for updates).
-
-            ### Notes
-            - Local-only vault under `%APPDATA%\com.ahmi.secretfolder`
-            - Master password + optional recovery key (shown once at setup)
-            - No cloud, no account, no backdoor for vault data
-            - Network use is limited to signed app updates
-
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) and the README threat model.
-          # Publish immediately so /releases/latest/download/latest.json works.
-          # Draft releases break auto-update (latest stays on the previous tag).
-          releaseDraft: false
-          prerelease: false
-          includeUpdaterJson: true
-          updaterJsonPreferNsis: true
-          args: --bundles nsis,msi
+      - name: Attach to the draft
+        working-directory: dist
+        run: gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$SETUP.sig" latest.json
