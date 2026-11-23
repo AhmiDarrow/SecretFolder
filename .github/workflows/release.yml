@@ -59,6 +59,8 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
           mkdir dist
           gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D dist -p "SecretFolder_${version}_x64-setup.exe"
+          # The Linux program (its in-app updates replace it), when this release has one.
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D dist -p "SecretFolder_${version}_linux-x86_64" || true
 
       - name: Sign
         env:
@@ -68,6 +70,11 @@ jobs:
           [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "::error::Missing repo secret TAURI_SIGNING_PRIVATE_KEY"; exit 1; }
           npx tauri signer sign "dist/$SETUP"
           [ -s "dist/$SETUP.sig" ] || { echo "::error::no signature written"; exit 1; }
+          linux="dist/SecretFolder_${VERSION}_linux-x86_64"
+          if [ -f "$linux" ]; then
+            npx tauri signer sign "$linux"
+            [ -s "$linux.sig" ] || { echo "::error::no Linux signature written"; exit 1; }
+          fi
 
       - name: Write latest.json
         working-directory: dist
@@ -95,4 +102,7 @@ jobs:
 
       - name: Attach to the draft
         working-directory: dist
-        run: gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$SETUP.sig" latest.json
+        run: |
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$SETUP.sig" latest.json
+          linux="SecretFolder_${VERSION}_linux-x86_64.sig"
+          if [ -f "$linux" ]; then gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$linux"; fi
