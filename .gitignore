@@ -34,6 +34,8 @@ src-tauri/icons/ios/
 
 # App data (never commit a real vault)
 vault.json
+# Made-up test vaults (compat/fixture.sh, test passwords) are part of the tests.
+!remedyui/tests/fixtures/vault-*/vault.json
 
 # Cargo.lock is committed for app reproducibility
 

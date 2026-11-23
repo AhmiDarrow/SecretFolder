@@ -7,7 +7,9 @@
 #   VERSION=1.0.0 .github/release-check/linux-start.sh    (from the repository root, with dist/)
 set -euo pipefail
 : "${VERSION:?VERSION is not set}"
-. /etc/os-release
+# /etc/os-release has its own VERSION, so read it in a subshell.
+PRETTY_NAME=$(. /etc/os-release && echo "$PRETTY_NAME")
+ID=$(. /etc/os-release && echo "$ID")
 echo "== $PRETTY_NAME, $(ldd --version | head -1)"
 
 # What a desktop has and a bare container does not: an X server for the test, and the

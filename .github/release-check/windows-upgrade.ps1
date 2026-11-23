@@ -23,6 +23,12 @@ $fail = 0
 function Check($ok, $what) {
     if ($ok) { Write-Output "PASS  $what" } else { Write-Output "FAIL  $what"; $script:fail++ }
 }
+# Checks two hash lists match, and prints what differs when they do not.
+function SameVault($a, $b, $what) {
+    $diff = Compare-Object @($a) @($b)
+    Check ($null -eq $diff) $what
+    foreach ($d in $diff) { Write-Output ("      {0} {1}" -f $(if ($d.SideIndicator -eq '<=') { 'before' } else { 'after ' }), $d.InputObject) }
+}
 function Hashes($dir) {
     Get-ChildItem -LiteralPath $dir -Recurse -File | Sort-Object FullName | ForEach-Object {
         '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash, $_.FullName.Substring($dir.Length)
@@ -62,7 +68,7 @@ $old = Start-Process -FilePath $oldExe.FullName -PassThru
 Start-Sleep -Seconds 6
 Check (-not $old.HasExited) 'old program running'
 $atStart = Hashes $vault
-Check (($before -join "`n") -eq ($atStart -join "`n")) 'old program opening the vault changed nothing'
+SameVault $before $atStart 'old program opening the vault changed nothing'
 $before = $atStart
 # The Tauri updater (installMode passive) starts the downloaded setup with these NSIS flags and
 # quits; the new installer must take them without complaint. Silent here so nothing waits on a click.
@@ -76,7 +82,7 @@ Get-Process -Name 'SecretFolder' -ErrorAction SilentlyContinue | Stop-Process -F
 
 Write-Output '== 4. after the update'
 $after = Hashes $vault
-Check (($before -join "`n") -eq ($after -join "`n")) 'vault folder byte for byte (every file, same hashes)'
+SameVault $before $after 'vault folder byte for byte (every file, same hashes)'
 Check (-not (Test-Path -LiteralPath $oldExe.FullName)) 'old program removed'
 if ($msi) {
     Check (@(MsiEntries).Count -eq 0) 'MSI install removed'
@@ -116,7 +122,7 @@ Start-Sleep -Seconds 3
 Get-Process -Name 'SecretFolder' -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 1
 $final = Hashes $vault
-Check (($before -join "`n") -eq ($final -join "`n")) 'vault still byte for byte after the new app opened it'
+SameVault $before $final 'vault still byte for byte after the new app opened it'
 
 Write-Output "== result: $fail failed"
 exit $fail
