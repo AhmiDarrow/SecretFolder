@@ -65,11 +65,19 @@ screenshots in `port-evidence/` (`before/` is the shipped UI, `after/` is Remedy
 - [x] Brand: the shipped dark palette with the amber accent as a theme, and the shipped mark.
 - [x] Accessibility: every control is named, and the engine's audit is clean on the gate, the recovery key screen, the explorer with items and inside folders. Grid rows are read through their cells.
 
+## Languages (0.2.0)
+
+- [x] The eleven shipped languages (en, es, fr, de, pt-BR, it, ru, pl, ja, ko, zh-CN) from 0.2.0's own catalogs (`src/i18n/locales/*.json`, compiled in unchanged). Strings the port shows that 0.2.0 had no key for are in `remedyui/src/port-strings.json`, in all eleven (`every_catalog_parses_and_has_every_english_key`).
+- [x] The choice lives in `ui.json` beside the vault, read and written by 0.2.0's own `prefs.rs` (other keys kept). `vault.json`, its `.bak` and the blobs are never written by a switch: all eleven switched in turn leave them byte for byte (`language_switches_everything_and_never_touches_the_vault`).
+- [x] An upgrade keeps its language: the 0.2.0 fixture vault opens in its saved German, and its `ui.json` is untouched (`shipped_vaults_open_edit_and_reopen_without_loss`). With nothing saved, the system's languages decide (0.2.0's `detectLocale` rules); `SECRETFOLDER_LOCALE` as in 0.2.0.
+- [x] A picker on every gate card (before any vault exists) and in Settings. Every screen, dialog, plural, number, size, vault error, the tray menu (0.2.0's `tray_labels`) and the update strip switch at once; a restart opens in the saved language.
+
 ## Not carried over (with reason)
 
-- Localization: the shipped app is English only. The port keeps English.
 - Kind icons come from the engine's icon set, not emoji. Emoji depend on the system's fonts. Folders, text, images and other files each have their own (`Icon::Folder`, `Icon::Note`, `Icon::Image`, `Icon::File`).
 
 ## Targets
 
 - [x] Windows: `cargo build --release`, and the built app was run against a temporary vault.
+- [x] Linux x86-64: `cargo remedy package --target linux` with `[linux] glibc = "2.28"` (cargo-zigbuild). The program needs at most GLIBC_2.28 and links only libc, libm, libpthread and libdl, so it runs on Debian 10, RHEL 8, Ubuntu 20.04 and later. All tests pass on Linux. Vault: `~/.local/share/com.ahmi.secretfolder`. In-app updates replace the program (`SecretFolder_<v>_linux-x86_64`, signed by the release job).
+- [ ] Started on Debian 10, Rocky 8 and Ubuntu 20.04, and the Windows installer run over installed 0.1.5 and 0.2.0 (vault and `ui.json` byte for byte): on GitHub's machines, before the release.
