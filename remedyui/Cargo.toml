@@ -1,0 +1,60 @@
+[package]
+name = "secretfolder"
+version = "1.0.0"
+description = "Encrypted folder vault, on RemedyUI"
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+publish = false
+
+# Its own workspace: separate from the Tauri app in src-tauri while both exist.
+[workspace]
+
+[[bin]]
+name = "SecretFolder"
+path = "src/main.rs"
+
+[dependencies]
+# RemedyUI (sibling checkout).
+remedy-ui = { path = "../../Projects/RemedyUI/crates/remedy-ui", features = ["data", "image", "svg"] }
+remedy-ui-widgets-core = { path = "../../Projects/RemedyUI/crates/remedy-ui-widgets-core" }
+remedy-ui-widgets-nav = { path = "../../Projects/RemedyUI/crates/remedy-ui-widgets-nav" }
+remedy-ui-widgets-data = { path = "../../Projects/RemedyUI/crates/remedy-ui-widgets-data" }
+remedy-ui-widgets-forms = { path = "../../Projects/RemedyUI/crates/remedy-ui-widgets-forms" }
+remedy-ui-media-image = { path = "../../Projects/RemedyUI/crates/remedy-ui-media-image" }
+remedy-ui-themes = { path = "../../Projects/RemedyUI/crates/remedy-ui-themes" }
+remedy-ui-services-update = { path = "../../Projects/RemedyUI/crates/remedy-ui-services-update" }
+remedy-ui-a11y = { path = "../../Projects/RemedyUI/crates/remedy-ui-a11y" }
+# The vault, shared with the Tauri app (same versions as its lockfile).
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+thiserror = "=2.0.19"
+uuid = { version = "=1.24.0", features = ["v4", "serde"] }
+chrono = { version = "=0.4.45", features = ["serde"] }
+dirs = "=6.0.0"
+base64 = "=0.22.1"
+zeroize = { version = "=1.9.1", features = ["derive"] }
+rand = "=0.8.7"
+argon2 = "=0.5.3"
+chacha20poly1305 = "=0.10.1"
+hex = "=0.4.3"
+mime_guess = "=2.0.5"
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+remedy-ui-bridge-headless = { path = "../../Projects/RemedyUI/crates/remedy-ui-bridge-headless" }
+remedy-ui-devtools = { path = "../../Projects/RemedyUI/crates/remedy-ui-devtools" }
+
+# Argon2 (64 MiB, 3 passes) is slow unoptimized; tests unlock vaults.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+
+[profile.release]
+lto = "fat"
+opt-level = "s"
+panic = "abort"
+codegen-units = 1
+strip = true

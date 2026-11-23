@@ -1,0 +1,26 @@
+[app]
+name = "SecretFolder"
+id = "com.ahmi.secretfolder"
+publisher = "Ahmi Darrow"
+description = "Encrypted folder vault"
+# The shipped app's icon (512 px).
+icon = "../src-tauri/icons/icon.png"
+
+# The Tauri builds (0.1.0 to 0.2.0) installed per user to %LOCALAPPDATA%\SecretFolder with
+# NSIS (secretfolder.exe and its uninstaller), and also shipped a per-machine MSI. This
+# installer waits for that program to close, then removes only those two files, its
+# shortcuts, its uninstall entry and its key. It never runs the old uninstaller (whose
+# "delete application data" box could reach the vault), and the vault in
+# %APPDATA%\com.ahmi.secretfolder is never touched.
+[windows.replaces]
+uninstall_key = "SecretFolder"
+files = ["secretfolder.exe", "uninstall.exe"]
+registry = ['Software\ahmi\SecretFolder']
+# tauri-plugin-single-instance's mutex (`<identifier>-sim`), held while 0.1.1 and later run.
+mutex = "com.ahmi.secretfolder-sim"
+# Every release also shipped SecretFolder_<version>_x64_en-US.msi.
+msi_name = "SecretFolder"
+
+[linux]
+# The oldest glibc the Linux build runs on (Debian 10, RHEL 8, Ubuntu 20.04 and later).
+glibc = "2.28"
