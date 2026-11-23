@@ -80,4 +80,4 @@ screenshots in `port-evidence/` (`before/` is the shipped UI, `after/` is Remedy
 
 - [x] Windows: `cargo build --release`, and the built app was run against a temporary vault.
 - [x] Linux x86-64: `cargo remedy package --target linux` with `[linux] glibc = "2.28"` (cargo-zigbuild). The program needs at most GLIBC_2.28 and links only libc, libm, libpthread and libdl, so it runs on Debian 10, RHEL 8, Ubuntu 20.04 and later. All tests pass on Linux. Vault: `~/.local/share/com.ahmi.secretfolder`. In-app updates replace the program (`SecretFolder_<v>_linux-x86_64`, signed by the release job).
-- [ ] Started on Debian 10, Rocky 8 and Ubuntu 20.04, and the Windows installer run over installed 0.1.5 and 0.2.0 (vault and `ui.json` byte for byte): on GitHub's machines, before the release.
+- [x] Started on Debian 10, Rocky 8 and Ubuntu 20.04, and the Windows installer run over installed 0.1.5 and 0.2.0 (setup and MSI) while they run, with the Tauri updater's flags (vault and `ui.json` byte for byte; 0.2.0 opens in its saved German): on GitHub's machines, before the release (`.github/workflows/release-check.yml`).
