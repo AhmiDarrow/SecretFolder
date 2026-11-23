@@ -1,11 +1,12 @@
 //! Before the explorer: create a vault, unlock it (password or recovery key), and the
-//! recovery key shown once after setup.
+//! recovery key shown once after setup. Every card has the language picker, so the app can
+//! be read before any vault exists.
 
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use remedy_ui::reactive::Signal;
+use remedy_ui::reactive::{Signal, untrack};
 use remedy_ui::style::StylePatch;
 use remedy_ui::view::{Align, Justify};
 use remedy_ui::{El, TextField, Ui};
@@ -13,6 +14,7 @@ use remedy_ui_widgets_core as w;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
+use crate::lang::{LOCALES, Lang};
 use crate::state::{self, St};
 
 /// How long a copied recovery key stays on the clipboard.
@@ -40,8 +42,30 @@ pub fn dyn_label(b: El, f: impl Fn() -> String + 'static) -> El {
     b
 }
 
-pub fn fineprint(ui: &Ui, s: &str) -> El {
+pub fn fineprint(ui: &Ui, s: impl remedy_ui::view::IntoProp<String>) -> El {
     w::text(ui, s).variant("muted").style(StylePatch::new().text_size(ui.theme().type_scale.small))
+}
+
+/// The language picker (every shipped language in its own name). A choice is saved to
+/// `ui.json` and applies at once; a switch made elsewhere moves the picker too.
+pub fn language_select(st: &St, ui: &Ui) -> El {
+    let l = st.lang;
+    let index = |id: &str| LOCALES.iter().position(|(x, _)| *x == id).unwrap_or(0);
+    let chosen = Signal::new(index(&l.now()));
+    let names = LOCALES.iter().map(|(_, n)| (*n).to_owned()).collect();
+    let pick = w::select(ui, l.k("settings.language"), names, chosen).fill_width().justify(Justify::SpaceBetween);
+    let st2 = st.clone();
+    let _ = pick.clone().bind(move || {
+        let (id, _) = LOCALES[chosen.get().min(LOCALES.len() - 1)];
+        if l.now() != id {
+            untrack(|| state::set_language(&st2, id));
+        }
+    });
+    let _ = pick.clone().bind(move || {
+        let i = index(&l.id());
+        untrack(|| chosen.set_if_changed(i));
+    });
+    pick
 }
 
 /// The centered card every gate screen sits in, with the app's mark; it scrolls when the
@@ -64,33 +88,31 @@ fn card(ui: &Ui, content: El) -> El {
     w::scroll(ui).grow(1.0).fill_width().child(inner)
 }
 
+/// A secret field named in the current language (again after a switch).
+fn secret(ui: &Ui, l: Lang, key: &'static str) -> TextField {
+    let f = w::secret_input(ui, l.t(key));
+    l.name_field(&f, key, false);
+    f
+}
+
 /// Setup (new vault) or unlock (password or recovery key).
 pub fn gate(st: &St, ui: &Ui, setup: bool, use_recovery: Signal<bool>) -> El {
     let unit = ui.theme().spacing.unit;
+    let l = st.lang;
     let recovery = !setup && use_recovery.get_untracked().unwrap_or(false);
     let (title, hint) = if setup {
-        (
-            "Create your vault",
-            "Choose a strong master password. Files are encrypted on disk.",
-        )
+        ("unlock.titleSetup", "unlock.leadSetup")
     } else if recovery {
-        ("Recovery unlock", "Unlock with your recovery key.")
+        ("unlock.titleRecovery", "unlock.leadRecovery")
     } else {
-        (
-            "Unlock SecretFolder",
-            "Enter your master password to open your encrypted vault.",
-        )
+        ("unlock.titleUnlock", "unlock.leadUnlock")
     };
-    let label = if recovery {
-        "Recovery key"
-    } else {
-        "Master password"
-    };
-    let pass = w::secret_input(ui, label);
+    let label = if recovery { "unlock.recoveryKey" } else { "unlock.masterPassword" };
+    let pass = secret(ui, l, label);
     if recovery {
         pass.set_reveal(true);
     }
-    let confirm = setup.then(|| w::secret_input(ui, "Confirm password"));
+    let confirm = setup.then(|| secret(ui, l, "unlock.confirmPassword"));
 
     let submit: Rc<dyn Fn()> = {
         let (st, pass, confirm) = (st.clone(), pass.clone(), confirm.clone());
@@ -100,13 +122,15 @@ pub fn gate(st: &St, ui: &Ui, setup: bool, use_recovery: Signal<bool>) -> El {
     let pass = pass.on_submit(move || s2());
     let busy = st.busy;
     let idle_label = if setup {
-        "Create vault"
+        "unlock.createVault"
     } else if recovery {
-        "Unlock with recovery key"
+        "unlock.unlockRecovery"
     } else {
-        "Unlock"
+        "unlock.unlock"
     };
-    let go = w::button(ui, idle_label, {
+    // A live label: the button's text and its accessible name both follow the language.
+    let go_label = move || crate::lang::tr(&l.id(), if busy.get() { "unlock.working" } else { idle_label });
+    let go = w::button(ui, go_label, {
         let s = submit.clone();
         move || {
             if !busy.get_untracked().unwrap_or(false) {
@@ -116,25 +140,18 @@ pub fn gate(st: &St, ui: &Ui, setup: bool, use_recovery: Signal<bool>) -> El {
     })
     .variant("primary")
     .fill_width();
-    let go = dyn_label(go, move || {
-        if busy.get() {
-            "Working…".to_owned()
-        } else {
-            idle_label.to_owned()
-        }
-    });
 
     let mut form = w::column(ui)
         .gap(unit * 3.0)
         .fill_width()
         .child(mark(ui))
-        .child(w::heading(ui, 1, title))
-        .child(w::text(ui, hint).variant("muted"))
-        .child(w::field(ui, label, pass.el().fill_width()));
+        .child(w::heading(ui, 1, l.k(title)))
+        .child(w::text(ui, l.k(hint)).variant("muted"))
+        .child(w::field(ui, l.k(label), pass.el().fill_width()));
     if let Some(c) = &confirm {
         let s3 = submit.clone();
         let c = c.clone().on_submit(move || s3());
-        form = form.child(w::field(ui, "Confirm password", c.el().fill_width()));
+        form = form.child(w::field(ui, l.k("unlock.confirmPassword"), c.el().fill_width()));
     }
     form = form.child(error_line(st, ui)).child(go);
     let initialized = st
@@ -144,15 +161,15 @@ pub fn gate(st: &St, ui: &Ui, setup: bool, use_recovery: Signal<bool>) -> El {
         .flatten()
         .is_some_and(|s| s.initialized);
     if !setup && initialized {
-        let (label, next) = if recovery {
-            ("Use master password", false)
+        let (key, next) = if recovery {
+            ("unlock.usePassword", false)
         } else {
-            ("Use recovery key", true)
+            ("unlock.useRecovery", true)
         };
         let e = st.error;
         form = form.child(
             w::row(ui).justify(Justify::Center).fill_width().child(
-                w::button(ui, label, move || {
+                w::button(ui, l.k(key), move || {
                     e.set(None);
                     use_recovery.set(next);
                 })
@@ -160,10 +177,7 @@ pub fn gate(st: &St, ui: &Ui, setup: bool, use_recovery: Signal<bool>) -> El {
             ),
         );
     }
-    form = form.child(fineprint(
-        ui,
-        "Local-only encrypted vault. No cloud sync. Signed app updates only.",
-    ));
+    form = form.child(fineprint(ui, l.k("unlock.fineprint"))).child(language_select(st, ui));
     pass.el().focus();
     card(ui, form)
 }
@@ -172,36 +186,28 @@ fn submit(st: &St, pass: &TextField, confirm: Option<&TextField>, setup: bool, r
     if st.busy.get_untracked().unwrap_or(false) {
         return;
     }
+    let l = st.lang;
     st.error.set(None);
     let pw = pass.take_secret();
     if setup {
         let again = confirm.map(TextField::take_secret);
         if pw.expose().chars().count() < MIN_PASSWORD {
-            st.error.set(Some(format!(
-                "Password must be at least {MIN_PASSWORD} characters."
-            )));
+            st.error.set(Some(l.t("unlock.pwShort")));
             return;
         }
         if again.as_ref().map(|a| a.expose()) != Some(pw.expose()) {
-            st.error.set(Some("Passwords do not match.".to_owned()));
+            st.error.set(Some(l.t("unlock.pwMismatch")));
             return;
         }
     } else if pw.is_empty() {
-        st.error.set(Some(
-            if recovery {
-                "Enter your recovery key."
-            } else {
-                "Enter your master password."
-            }
-            .to_owned(),
-        ));
+        st.error.set(Some(l.t(if recovery { "port.enterRecovery" } else { "port.enterPassword" })));
         return;
     } else if let Err(e) = st.throttle.borrow_mut().check() {
-        st.error.set(Some(e.to_string()));
+        st.fail(e.to_string());
         return;
     }
     let Some(vault) = st.shared() else {
-        st.error.set(Some(st.load_error.clone()));
+        st.error.set(Some(st.load_error()));
         return;
     };
     st.busy.set(true);
@@ -223,9 +229,7 @@ fn submit(st: &St, pass: &TextField, confirm: Option<&TextField>, setup: bool, r
             match r {
                 Ok(key) => {
                     if setup && key.as_ref().is_none_or(|k| k.trim().is_empty()) {
-                        s.error.set(Some(
-                            "Setup succeeded but no recovery key was returned.".to_owned(),
-                        ));
+                        s.error.set(Some(s.lang.t("unlock.noKey")));
                         return;
                     }
                     if !setup {
@@ -238,7 +242,7 @@ fn submit(st: &St, pass: &TextField, confirm: Option<&TextField>, setup: bool, r
                     if !setup && matches!(e, AppError::BadPassword | AppError::Crypto(_)) {
                         s.throttle.borrow_mut().record_failure();
                     }
-                    s.error.set(Some(e.to_string()));
+                    s.fail(e.to_string());
                 }
             }
         },
@@ -249,6 +253,7 @@ fn submit(st: &St, pass: &TextField, confirm: Option<&TextField>, setup: bool, r
 /// saved.
 pub fn recovery_key(st: &St, ui: &Ui) -> El {
     let unit = ui.theme().spacing.unit;
+    let l = st.lang;
     let key = st
         .recovery_key
         .borrow()
@@ -259,39 +264,38 @@ pub fn recovery_key(st: &St, ui: &Ui) -> El {
     let shown = w::text(ui, Zeroizing::new(key).as_str()).variant("strong")
         .data_text()
         .style(StylePatch::new().mono(true))
-        .semantics(
-            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Status).label("Recovery key"),
-        );
+        .semantics(move || {
+            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Status).label(crate::lang::tr(&l.id(), "unlock.recoveryKey"))
+        });
     let copied = Rc::new(Cell::new(0u64));
-    let copy_label = Signal::new("Copy recovery key".to_owned());
+    // Whether "Copied" shows (for two seconds after a copy).
+    let just_copied = Signal::new(false);
     let copy = {
         let (st, copied) = (st.clone(), copied.clone());
         move || {
             if let Some(k) = st.recovery_key.borrow().as_ref() {
                 st.app.copy_secret(k.to_string(), RECOVERY_COPY_KEEP);
-                copy_label.set("Copied".to_owned());
+                just_copied.set(true);
                 let n = copied.get() + 1;
                 copied.set(n);
                 let c2 = copied.clone();
                 st.app.after(Duration::from_secs(2), move || {
                     if c2.get() == n {
-                        copy_label.set("Copy recovery key".to_owned());
+                        just_copied.set(false);
                     }
                 });
             }
         }
     };
     let copy_btn = dyn_label(
-        w::button(ui, "Copy recovery key", copy).variant("primary"),
-        move || copy_label.get(),
+        w::button(ui, l.t("recovery.copy"), copy).variant("primary"),
+        move || crate::lang::tr(&l.id(), if just_copied.get() { "recovery.copied" } else { "recovery.copy" }),
     );
     let done = {
         let st = st.clone();
         move || {
             if !saved.get_untracked().unwrap_or(false) {
-                st.error.set(Some(
-                    "Confirm that you saved the recovery key before continuing.".to_owned(),
-                ));
+                st.error.set(Some(st.lang.t("unlock.confirmSaveError")));
                 return;
             }
             st.error.set(None);
@@ -300,12 +304,12 @@ pub fn recovery_key(st: &St, ui: &Ui) -> El {
         }
     };
     let e = st.error;
-    let check = w::check(ui, "I saved this recovery key somewhere safe", saved);
+    let check = w::check(ui, l.k("recovery.savedCheck"), saved);
     let check = check.bind(move || {
         let _ = saved.get();
         e.set(None);
     });
-    let go = w::button(ui, "Continue to vault", done)
+    let go = w::button(ui, l.k("recovery.continue"), done)
         .variant("primary")
         .fill_width();
     let g2 = go.clone();
@@ -318,29 +322,34 @@ pub fn recovery_key(st: &St, ui: &Ui) -> El {
             .gap(unit * 3.0)
             .fill_width()
             .child(mark(ui))
-            .child(w::heading(ui, 1, "Save your recovery key"))
-            .child(w::text(ui, "This is the only time SecretFolder will show this key. Store it offline — it unlocks the vault if \
-                 you forget the master password. Anyone with this key can open your vault.").variant("muted"))
+            .child(w::heading(ui, 1, l.k("recovery.title")))
+            .child(w::text(ui, move || crate::lang::plain(&crate::lang::tr(&l.id(), "recovery.body"))).variant("muted"))
             .child(w::card(ui).fill_width().child(shown))
             .child(copy_btn)
             .child(check)
             .child(error_line(st, ui))
             .child(go)
-            .child(fineprint(ui, "Protects data at rest on disk. Does not protect a fully compromised PC while unlocked.")),
+            .child(fineprint(ui, l.k("recovery.fineprint")))
+            .child(language_select(st, ui)),
     )
 }
 
 /// The vault could not be opened.
 pub fn broken(st: &St, ui: &Ui) -> El {
-    let s = st.clone();
+    let (s, s2, l) = (st.clone(), st.clone(), st.lang);
     card(
         ui,
         w::column(ui)
             .gap(ui.theme().spacing.unit * 3.0)
             .child(mark(ui))
-            .child(w::heading(ui, 1, "SecretFolder can't start"))
-            .child(w::text(ui, st.load_error.clone()).variant("error"))
-            .child(w::button(ui, "Quit", move || state::quit(&s)).variant("danger")),
+            .child(w::heading(ui, 1, l.k("port.cantStart")))
+            .child(w::text(ui, move || {
+                let _ = l.id();
+                s2.load_error()
+            })
+            .variant("error"))
+            .child(w::button(ui, l.k("tray.quit"), move || state::quit(&s)).variant("danger"))
+            .child(language_select(st, ui)),
     )
 }
 

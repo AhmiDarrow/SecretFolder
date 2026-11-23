@@ -37,14 +37,9 @@ struct Detail {
     image: Option<Arc<[u8]>>,
 }
 
-pub fn size_text(n: u64) -> String {
-    if n < 1024 {
-        format!("{n} B")
-    } else if n < 1024 * 1024 {
-        format!("{:.1} KB", n as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", n as f64 / (1024.0 * 1024.0))
-    }
+/// A size the shipped way (`formatBytes`) in `id`.
+pub fn size_text(id: &str, n: u64) -> String {
+    crate::lang::bytes(id, n)
 }
 
 fn icon_for(kind: ItemKind) -> w::Icon {
@@ -56,33 +51,36 @@ fn icon_for(kind: ItemKind) -> w::Icon {
     }
 }
 
-fn kind_name(kind: ItemKind) -> &'static str {
-    match kind {
-        ItemKind::Folder => "Folder",
-        ItemKind::Text => "Text",
-        ItemKind::Image => "Image",
-        ItemKind::Binary => "File",
-    }
+/// The kind as 0.2.0 names it (`files.kind*`), capitalized for the Kind column.
+fn kind_name(id: &str, kind: ItemKind) -> String {
+    let key = match kind {
+        ItemKind::Folder => "files.kindFolder",
+        ItemKind::Text => "files.kindText",
+        ItemKind::Image => "files.kindImage",
+        ItemKind::Binary => "files.kindBinary",
+    };
+    crate::lang::cap(&crate::lang::tr(id, key))
 }
 
-/// A batch's outcome, as the original words it: nothing when all went well.
-fn batch_message(verb: &str, past: &str, ok: usize, failures: &[String]) -> Option<String> {
+/// What a batch did: `(failed-all key, partial key, the partial key's count name)`.
+struct Batch(&'static str, &'static str, &'static str);
+const IMPORT: Batch = Batch("files.importFailed", "files.importedPartial", "imported");
+const MOVE: Batch = Batch("files.moveFailed", "files.movedPartial", "moved");
+const DELETE: Batch = Batch("files.deleteFailed", "files.deletedPartial", "deleted");
+
+/// A batch's outcome, as 0.2.0 words it (and its first few reasons): nothing when all went
+/// well.
+fn batch_message(st: &St, b: &Batch, ok: usize, failures: &[String]) -> Option<String> {
     if failures.is_empty() {
         return None;
     }
+    let l = st.lang;
     let head = if ok == 0 {
-        format!("{verb} failed. ")
+        l.t(b.0)
     } else {
-        format!("{past} {ok}, {} failed. ", failures.len())
+        l.tv(b.1, &[(b.2, &l.num(ok as u64)), ("failed", &l.num(failures.len() as u64))])
     };
-    Some(
-        head + &failures
-            .iter()
-            .take(3)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(" · "),
-    )
+    Some(format!("{head} {}", failures.iter().take(3).cloned().collect::<Vec<_>>().join(" · ")))
 }
 
 /// Imports files from disk into `parent`, with the Tauri app's rules (where files may come
@@ -115,11 +113,11 @@ pub fn import_paths(st: &St, paths: &[PathBuf], parent: Option<String>) {
                 state::lock(st);
                 return;
             }
-            Err(e) => failures.push(format!("{name}: {e}")),
+            Err(e) => failures.push(format!("{name}: {}", st.lang.err(&e.to_string()))),
         }
     }
     state::changed(st);
-    if let Some(m) = batch_message("Import", "Imported", ok, &failures) {
+    if let Some(m) = batch_message(st, &IMPORT, ok, &failures) {
         st.error.set(Some(m));
     }
 }
@@ -134,11 +132,11 @@ fn move_items(st: &St, ids: &[String], parent: Option<String>) {
                 state::lock(st);
                 return;
             }
-            Err(e) => failures.push(e.to_string()),
+            Err(e) => failures.push(st.lang.err(&e.to_string())),
         }
     }
     state::changed(st);
-    if let Some(m) = batch_message("Move", "Moved", ok, &failures) {
+    if let Some(m) = batch_message(st, &MOVE, ok, &failures) {
         st.error.set(Some(m));
     }
 }
@@ -231,66 +229,20 @@ pub fn files(st: &St, ui: &Ui) -> El {
             take_drop(&s2, d, folder);
         },
     );
-    let columns = vec![
-        Column::new("name", "Name", 220.0, |ui: &Ui, i: &ItemPreview| {
-            w::row(ui)
-                .gap(ui.theme().spacing.unit * 2.0)
-                .align(Align::Center)
-                .child(w::icon(ui, icon_for(i.kind), ui.theme().type_scale.body + 2.0))
-                .child(crate::state::label(ui, i.name.clone(), "").data_text().nowrap())
-        })
-        .sort_by(|i: &ItemPreview| {
-            SortValue::Text(format!(
-                "{}{}",
-                u8::from(i.kind != ItemKind::Folder),
-                i.name
-            ))
-        }),
-        {
-            let (st, sel) = (st.clone(), tstate.selection.clone());
-            Column::new("actions", "Actions", 140.0, move |ui: &Ui, i: &ItemPreview| {
-                row_actions(&st, ui, i, &sel)
-            })
-        },
-        Column::new("size", "Size", 90.0, |ui: &Ui, i: &ItemPreview| {
-            let s = if i.kind == ItemKind::Folder {
-                "—".to_owned()
-            } else {
-                size_text(i.size)
-            };
-            crate::state::label(ui, s, "muted").nowrap()
-        })
-        .sort_by(|i: &ItemPreview| {
-            if i.kind == ItemKind::Folder {
-                SortValue::Missing
-            } else {
-                SortValue::Number(i.size as f64)
-            }
-        })
-        .align_end(),
-        Column::text("kind", "Kind", 80.0, |i: &ItemPreview| {
-            kind_name(i.kind).to_owned()
-        }),
-        Column::text("modified", "Modified", 150.0, |i: &ItemPreview| {
-            chrono::DateTime::parse_from_rfc3339(&i.updated_at)
-                .map(|t| {
-                    t.with_timezone(&chrono::Local)
-                        .format("%Y-%m-%d %H:%M")
-                        .to_string()
-                })
-                .unwrap_or_default()
-        }),
-    ];
-    let (s3, u3) = (st.clone(), ui.clone());
-    let list = table(
-        ui,
-        "Items",
-        shown,
-        |i: &ItemPreview| i.id.clone(),
-        columns,
-        &tstate,
-        move |id| open_item(&s3, &u3, id),
-    );
+    // The list is built again in the new language after a switch (its headings are fixed
+    // when built); the selection, sort and scroll state live in `tstate` and are kept.
+    let slot = w::column(ui)
+        .grow(1.0)
+        .fill_width()
+        .layout(|l| l.min_height = Length::Px(0.0));
+    let (sl, st_l, ui_l, ts_l, l) = (slot.clone(), st.clone(), ui.clone(), tstate.clone(), st.lang);
+    let list = slot.bind(move || {
+        let id = l.id();
+        untrack(|| {
+            sl.clear();
+            let _ = sl.clone().child(item_table(&st_l, &ui_l, &ts_l, shown, &id));
+        });
+    });
 
     // ---- the open item follows the selection's cursor; moving away from unsaved text asks
     // first (Stay goes back to it).
@@ -316,13 +268,14 @@ pub fn files(st: &St, ui: &Ui) -> El {
                 open.unwrap_or_default(),
             );
             let target = cursor.clone();
+            let l = s4.lang;
             let _ = w::dialog(
                 &u4,
-                "Unsaved changes",
-                "You have unsaved text changes. Leave without saving?",
+                l.t("port.unsavedTitle"),
+                l.t("files.unsavedConfirm"),
                 vec![
-                    DialogButton::new("Stay", "", move || sel2.select_only(open.clone())),
-                    DialogButton::new("Leave without saving", "danger", move || {
+                    DialogButton::new(l.t("port.stay"), "", move || sel2.select_only(open.clone())),
+                    DialogButton::new(l.t("port.leave"), "danger", move || {
                         s5.dirty.set(false);
                         load_detail(&s6, target.as_deref(), detail);
                     }),
@@ -332,26 +285,24 @@ pub fn files(st: &St, ui: &Ui) -> El {
     });
 
     // ---- toolbar, selection bar, breadcrumbs, empty state
-    let search = w::search(ui, "Search this folder…", move |s| query.set(s));
+    let l = st.lang;
+    let search = w::search(ui, l.t("files.search"), move |s| query.set(s));
     let (s5, s6, s7) = (st.clone(), st.clone(), st.clone());
     let (u1, sel2) = (ui.clone(), tstate.selection.clone());
     let toolbar = w::wrap(ui)
         .gap(unit * 2.0)
-        .child(w::button(ui, "New text", move || new_text(&s5, &sel2)).variant("primary"))
-        .child(w::button(ui, "New folder", move || {
+        .child(w::button(ui, l.k("files.newText"), move || new_text(&s5, &sel2)).variant("primary"))
+        .child(w::button(ui, l.k("files.newFolder"), move || {
             name_dialog(&s6, &u1, None)
         }))
-        .child(w::button(ui, "Import…", move || import_dialog(&s7)));
+        .child(w::button(ui, l.k("files.import"), move || import_dialog(&s7)));
     let selbar = selection_bar(st, ui, &tstate, detail);
     let crumbs = crumbs(st, ui, &tstate);
     let (f, ue) = (st.folder, ui.clone());
     let empty = remedy_ui::show(ui, move || shown.with(Vec::is_empty), move || {
         crate::state::label(&ue, "", "muted").text(move || {
-            if f.get().is_some() {
-                "Empty — drop files here, or drag items onto a folder in the path above to move them up.".to_owned()
-            } else {
-                "Empty folder — drop files here or use Import.".to_owned()
-            }
+            let key = if f.get().is_some() { "files.emptyChild" } else { "files.emptyRoot" };
+            crate::lang::tr(&l.id(), key)
         })
     })
     .el();
@@ -415,6 +366,48 @@ pub fn files(st: &St, ui: &Ui) -> El {
         .child(split)
 }
 
+/// The item list with its headings in `id`.
+fn item_table(st: &St, ui: &Ui, tstate: &TableState<String>, shown: Signal<Vec<ItemPreview>>, id: &str) -> El {
+    let (id1, id2) = (id.to_owned(), id.to_owned());
+    let t = |key: &str| crate::lang::tr(id, key);
+    let columns = vec![
+        Column::new("name", t("dialog.name"), 220.0, |ui: &Ui, i: &ItemPreview| {
+            w::row(ui)
+                .gap(ui.theme().spacing.unit * 2.0)
+                .align(Align::Center)
+                .child(w::icon(ui, icon_for(i.kind), ui.theme().type_scale.body + 2.0))
+                .child(crate::state::label(ui, i.name.clone(), "").data_text().nowrap())
+        })
+        .sort_by(|i: &ItemPreview| SortValue::Text(format!("{}{}", u8::from(i.kind != ItemKind::Folder), i.name))),
+        {
+            let (st, sel) = (st.clone(), tstate.selection.clone());
+            Column::new("actions", t("port.colActions"), 140.0, move |ui: &Ui, i: &ItemPreview| {
+                row_actions(&st, ui, i, &sel)
+            })
+        },
+        Column::new("size", t("port.colSize"), 90.0, move |ui: &Ui, i: &ItemPreview| {
+            let s = if i.kind == ItemKind::Folder { "—".to_owned() } else { size_text(&id1, i.size) };
+            // Body text like Kind and Modified: muted text on a selected (amber) row falls
+            // just under 4.5:1.
+            crate::state::label(ui, s, "").nowrap()
+        })
+        .sort_by(|i: &ItemPreview| {
+            if i.kind == ItemKind::Folder { SortValue::Missing } else { SortValue::Number(i.size as f64) }
+        })
+        .align_end(),
+        Column::text("kind", t("port.colKind"), 80.0, move |i: &ItemPreview| kind_name(&id2, i.kind)),
+        Column::text("modified", t("port.colModified"), 150.0, |i: &ItemPreview| {
+            chrono::DateTime::parse_from_rfc3339(&i.updated_at)
+                .map(|t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_default()
+        }),
+    ];
+    let (s3, u3) = (st.clone(), ui.clone());
+    table(ui, t("files.listLabel"), shown, |i: &ItemPreview| i.id.clone(), columns, tstate, move |id| {
+        open_item(&s3, &u3, id)
+    })
+}
+
 /// Opens a folder, or the item in the detail pane (asking first if the editor has unsaved
 /// edits).
 fn open_item(st: &St, ui: &Ui, id: &str) {
@@ -443,14 +436,14 @@ fn guard(st: &St, ui: &Ui, then: impl Fn() + 'static) {
         then();
         return;
     }
-    let d = st.dirty;
+    let (d, l) = (st.dirty, st.lang);
     let _ = w::dialog(
         ui,
-        "Unsaved changes",
-        "You have unsaved text changes. Leave without saving?",
+        l.t("port.unsavedTitle"),
+        l.t("files.unsavedConfirm"),
         vec![
-            DialogButton::new("Stay", "", || {}),
-            DialogButton::new("Leave without saving", "danger", move || {
+            DialogButton::new(l.t("port.stay"), "", || {}),
+            DialogButton::new(l.t("port.leave"), "danger", move || {
                 d.set(false);
                 then();
             }),
@@ -508,32 +501,29 @@ fn selection_bar(
     let unit = ui.theme().spacing.unit;
     let sel = tstate.selection.clone();
     let slot = w::row(ui).gap(unit * 2.0).align(Align::Center).fill_width();
-    let (s2, st2, u2, sel2) = (slot.clone(), st.clone(), ui.clone(), sel.clone());
+    let (s2, st2, u2, sel2, l) = (slot.clone(), st.clone(), ui.clone(), sel.clone(), st.lang);
     slot.bind(move || {
         let n = sel2.selected.with(Vec::len);
+        let _ = l.id();
         untrack(|| {
             s2.clear();
             if n == 0 {
-                let _ = s2.clone().child(crate::state::label(
-                    &u2,
-                    "Click to select · double-click to open · Ctrl/Shift multi-select",
-                    "muted",
-                ));
+                let _ = s2.clone().child(crate::state::label(&u2, l.t("files.selectHint"), "muted"));
                 return;
             }
             let (st3, u3, sel3, sel4) = (st2.clone(), u2.clone(), sel2.clone(), sel2.clone());
             let _ = s2
                 .clone()
-                .child(crate::state::label(&u2, format!("{n} selected"), "strong"))
+                .child(crate::state::label(&u2, l.tv("files.selected", &[("count", &l.num(n as u64))]), "strong"))
                 .child(
-                    w::button(&u2, "Delete", move || {
+                    w::button(&u2, l.t("files.delete"), move || {
                         let ids = sel3.selected.get_untracked().unwrap_or_default();
                         delete_dialog(&st3, &u3, ids, &sel3);
                     })
                     .variant("danger"),
                 )
-                .child(w::button(&u2, "Clear", move || sel4.clear()).variant("quiet"))
-                .child(crate::state::label(&u2, "Drag onto a folder to move", "muted"));
+                .child(w::button(&u2, l.t("files.clear"), move || sel4.clear()).variant("quiet"))
+                .child(crate::state::label(&u2, l.t("files.multiHint"), "muted"));
         });
     })
     .semantics(
@@ -551,7 +541,7 @@ fn crumbs(st: &St, ui: &Ui, tstate: &TableState<String>) -> El {
         .align(Align::Center)
         .fill_width()
         .semantics(
-            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Group).label("Folder path"),
+            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Group).label(st.lang.t("files.pathLabel")),
         );
     let (b2, st2, u2, _sel) = (
         bar.clone(),
@@ -559,12 +549,14 @@ fn crumbs(st: &St, ui: &Ui, tstate: &TableState<String>) -> El {
         ui.clone(),
         tstate.selection.clone(),
     );
+    let l = st.lang;
     bar.bind(move || {
         let crumbs = st2.crumbs.get();
         let here = st2.folder.get();
+        let _ = l.id();
         untrack(|| {
             b2.clear();
-            let mut parts: Vec<(Option<String>, String)> = vec![(None, "Vault".to_owned())];
+            let mut parts: Vec<(Option<String>, String)> = vec![(None, l.t("files.vault"))];
             parts.extend(crumbs.iter().map(|c| (Some(c.id.clone()), c.name.clone())));
             let last = parts.len() - 1;
             for (i, (id, name)) in parts.into_iter().enumerate() {
@@ -602,7 +594,7 @@ fn crumbs(st: &St, ui: &Ui, tstate: &TableState<String>) -> El {
                     u2.clone(),
                 );
                 let _ = b2.clone().child(
-                    w::button(&u2, "↑ Up", move || {
+                    w::button(&u2, l.t("files.up"), move || {
                         let (s2, up) = (s.clone(), up.clone());
                         guard(&s, &u4, move || go_to(&s2, up.clone()));
                     })
@@ -620,11 +612,12 @@ fn row_actions(st: &St, ui: &Ui, i: &ItemPreview, sel: &remedy_ui_widgets_data::
     let small = remedy_ui::style::StylePatch::new()
         .text_size(ui.theme().type_scale.small)
         .padding(Insets::symmetric(unit * 0.5, unit * 2.0));
+    let l = st.lang;
     let mut row = w::row(ui).gap(unit).align(Align::Center);
     if i.kind == ItemKind::Folder {
         let (s, u, id) = (st.clone(), ui.clone(), i.id.clone());
         row = row.child(
-            w::button(ui, "Open", move || {
+            w::button(ui, l.t("files.open"), move || {
                 let (s2, id) = (s.clone(), id.clone());
                 guard(&s, &u, move || go_to(&s2, Some(id.clone())));
             })
@@ -633,19 +626,19 @@ fn row_actions(st: &St, ui: &Ui, i: &ItemPreview, sel: &remedy_ui_widgets_data::
             .height(24.0)
             .semantics(
                 remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Button)
-                    .label(format!("Open folder {}", i.name))
+                    .label(l.tv("files.openFolderTitle", &[("name", &i.name)]))
                     .action(remedy_ui_a11y::Action::Click),
             ),
         );
     }
     let (s, u, id, sel) = (st.clone(), ui.clone(), i.id.clone(), sel.clone());
     let label = if i.kind == ItemKind::Folder {
-        format!("Remove folder {}", i.name)
+        l.tv("files.removeFolderAria", &[("name", &i.name)])
     } else {
-        format!("Remove {}", i.name)
+        l.tv("files.removeItemAria", &[("name", &i.name)])
     };
     row.child(
-        w::button(ui, "Remove", move || delete_dialog(&s, &u, vec![id.clone()], &sel))
+        w::button(ui, l.t("files.remove"), move || delete_dialog(&s, &u, vec![id.clone()], &sel))
             .variant("danger")
             .style(small)
             .height(24.0)
@@ -674,10 +667,12 @@ fn parent_row_built(st: &St, ui: &Ui) -> El {
             .ok()
             .flatten()
     };
+    let l = st.lang;
     let hint = w::text(ui, "").variant("muted").text(move || {
         let _ = crumbs.get();
-        let name = parent().map_or_else(|| "Vault".to_owned(), |(_, n)| n);
-        format!("Parent folder · {name} · drop here to move up")
+        let id = l.id();
+        let name = parent().map_or_else(|| crate::lang::tr(&id, "files.vault"), |(_, n)| n);
+        crate::lang::trv(&id, "files.parentMeta", &[("extra", &format!(" · {name}"))])
     });
     let (s1, u1) = (st.clone(), ui.clone());
     let (sa, sd) = (st.clone(), st.clone());
@@ -699,12 +694,12 @@ fn parent_row_built(st: &St, ui: &Ui) -> El {
             move |d, _| accept(&sa, d, None, parent().map(|(id, _)| id)),
             move |d, _, _| take_drop(&sd, d, parent().map(|(id, _)| id)),
         )
-        .semantics(
+        .semantics(move || {
             remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Button)
-                .label("Go to parent folder")
-                .action(remedy_ui_a11y::Action::Click),
-        );
-    w::tooltip(&row, "Go to parent folder — drop items here to move up");
+                .label(crate::lang::tr(&l.id(), "port.parentFolder"))
+                .action(remedy_ui_a11y::Action::Click)
+        });
+    w::tooltip(&row, l.k("files.parentTitle"));
     row
 }
 
@@ -714,7 +709,8 @@ fn here_of(st: &St) -> Option<String> {
 
 fn new_text(st: &St, sel: &remedy_ui_widgets_data::Selection<String>) {
     let folder = here_of(st);
-    if let Some(item) = checked(st, st.with(|v| v.create_text("Untitled.txt", "", folder))) {
+    let name = st.lang.t("files.defaultTextName");
+    if let Some(item) = checked(st, st.with(|v| v.create_text(&name, "", folder))) {
         state::changed(st);
         sel.select_only(item.id);
     }
@@ -727,7 +723,7 @@ fn import_dialog(st: &St) {
         win.as_ref(),
         {
             let mut d = FileDialog::default();
-            d.title = "Import into SecretFolder".into();
+            d.title = st.lang.t("port.importDialog");
             d.multiple = true;
             d
         },
@@ -751,7 +747,7 @@ fn export(st: &St, item: &ItemPreview) {
         win.as_ref(),
         {
             let mut d = FileDialog::default();
-            d.title = "Export from SecretFolder".into();
+            d.title = st.lang.t("files.exportDialog");
             d.save = true;
             d.file_name = Some(name);
             d
@@ -778,9 +774,11 @@ fn export(st: &St, item: &ItemPreview) {
 fn name_dialog(st: &St, ui: &Ui, item: Option<ItemPreview>) {
     let unit = ui.theme().spacing.unit;
     let rename = item.is_some();
-    let label = if rename { "New name" } else { "Folder name" };
-    let field = w::text_input(ui, label);
-    field.set_value(item.as_ref().map_or("New folder", |i| i.name.as_str()));
+    let l = st.lang;
+    let label = l.t(if rename { "port.newName" } else { "port.folderName" });
+    let field = w::text_input(ui, label.clone());
+    let default_name = l.t("files.defaultFolderName");
+    field.set_value(item.as_ref().map_or(default_name.as_str(), |i| i.name.as_str()));
     let modal_slot: Rc<RefCell<Option<w::Modal>>> = Rc::default();
     let submit: Rc<dyn Fn()> = {
         let (st, field, item, slot) = (st.clone(), field.clone(), item.clone(), modal_slot.clone());
@@ -805,7 +803,7 @@ fn name_dialog(st: &St, ui: &Ui, item: Option<ItemPreview>) {
     let s2 = submit.clone();
     let field = field.on_submit(move || s2());
     let slot2 = modal_slot.clone();
-    let go = w::button(ui, if rename { "Rename" } else { "Create" }, move || {
+    let go = w::button(ui, l.t(if rename { "dialog.rename" } else { "dialog.create" }), move || {
         submit()
     })
     .variant("primary");
@@ -816,7 +814,7 @@ fn name_dialog(st: &St, ui: &Ui, item: Option<ItemPreview>) {
             w::row(ui)
                 .gap(unit * 2.0)
                 .justify(remedy_ui::view::Justify::End)
-                .child(w::button(ui, "Cancel", move || {
+                .child(w::button(ui, l.t("dialog.cancel"), move || {
                     if let Some(m) = slot2.borrow().as_ref() {
                         m.close();
                     }
@@ -825,7 +823,7 @@ fn name_dialog(st: &St, ui: &Ui, item: Option<ItemPreview>) {
         );
     let m = w::modal(
         ui,
-        if rename { "Rename" } else { "New folder" },
+        l.t(if rename { "dialog.renameTitle" } else { "dialog.newFolderTitle" }),
         content,
         true,
     );
@@ -857,70 +855,54 @@ fn delete_dialog(
             nested.push((i.id.clone(), n));
         }
     }
+    // Worded as 0.2.0's delete dialog (`ExplorerScreen.tsx`), from its catalog.
+    let l = st.lang;
     let n = items.len();
-    let quote = |s: &str| format!("“{s}”");
+    let quoted: Vec<String> = items.iter().map(|i| l.tv("delete.quote", &[("name", &i.name)])).collect();
+    let joiner = l.t("delete.join");
     let names = if n <= 3 {
-        items
-            .iter()
-            .map(|i| quote(&i.name))
-            .collect::<Vec<_>>()
-            .join(", ")
+        quoted.join(&joiner)
     } else {
-        format!(
-            "{}, {} and {} more",
-            quote(&items[0].name),
-            quote(&items[1].name),
-            n - 2
-        )
+        l.tv("delete.andMore", &[("names", &quoted[..2].join(&joiner)), ("count", &l.num((n - 2) as u64))])
     };
     let single_folder = n == 1 && items[0].kind == ItemKind::Folder;
     let title = if n > 1 {
-        format!("Delete {n} items?")
+        l.tv("delete.titleItems", &[("count", &l.num(n as u64))])
     } else if single_folder && !nested.is_empty() {
-        "Folder is not empty".to_owned()
+        l.t("delete.titleNotEmpty")
     } else if single_folder {
-        "Delete empty folder?".to_owned()
+        l.t("delete.titleEmptyFolder")
     } else {
-        "Delete item?".to_owned()
+        l.t("delete.titleItem")
     };
     let (message, button) = if nested.is_empty() {
         (
-            format!("Delete {names}? This cannot be undone."),
+            format!("{} {}", l.tv("delete.simple", &[("names", &names)]), l.t("delete.cannotUndo")),
             if n > 1 {
-                format!("Delete {n}")
+                l.tv("delete.count", &[("count", &l.num(n as u64))])
             } else if single_folder {
-                "Delete folder".to_owned()
+                l.t("delete.folder")
             } else {
-                "Delete".to_owned()
+                l.t("delete.one")
             },
         )
     } else {
         let total: usize = nested.iter().map(|(_, c)| c).sum();
         let head = if n == 1 {
-            format!(
-                "{} still has {} item{} inside.",
-                names,
-                total,
-                if total == 1 { "" } else { "s" }
-            )
+            l.tv("delete.oneCascade", &[("name", &items[0].name), ("items", &l.count("child", total as u64))])
         } else {
-            format!(
-                "Delete {names}? {} folder{} still hold{} {total} nested item{}.",
-                nested.len(),
-                if nested.len() == 1 { "" } else { "s" },
-                if nested.len() == 1 { "s" } else { "" },
-                if total == 1 { "" } else { "s" }
+            l.tv(
+                "delete.multiCascade",
+                &[
+                    ("names", &names),
+                    ("folders", &l.count("folders", nested.len() as u64)),
+                    ("nested", &l.count("nested", total as u64)),
+                ],
             )
         };
         (
-            format!(
-                "{head} Empty folders first, or permanently delete everything selected (including nested contents). This cannot be undone."
-            ),
-            if n == 1 {
-                "Delete folder & contents".to_owned()
-            } else {
-                "Delete all & contents".to_owned()
-            },
+            format!("{} {}", crate::lang::plain(&head), l.t("delete.cascadeHelp")),
+            if n == 1 { l.t("delete.folderContents") } else { l.t("delete.allContents") },
         )
     };
     let (s, sel) = (st.clone(), sel.clone());
@@ -929,7 +911,7 @@ fn delete_dialog(
         title,
         message,
         vec![
-            DialogButton::new("Cancel", "", || {}),
+            DialogButton::new(l.t("dialog.cancel"), "", || {}),
             DialogButton::new(button, "danger_solid", move || {
                 let (mut ok, mut failures) = (0usize, Vec::new());
                 let here = here_of(&s);
@@ -941,7 +923,7 @@ fn delete_dialog(
                             state::lock(&s);
                             return;
                         }
-                        Err(e) => failures.push(format!("{}: {e}", i.name)),
+                        Err(e) => failures.push(format!("{}: {}", i.name, s.lang.err(&e.to_string()))),
                     }
                     if here.as_deref() == Some(i.id.as_str()) {
                         s.folder.set(i.parent_id.clone());
@@ -950,7 +932,7 @@ fn delete_dialog(
                 sel.clear();
                 s.dirty.set(false);
                 state::changed(&s);
-                if let Some(m) = batch_message("Delete", "Deleted", ok, &failures) {
+                if let Some(m) = batch_message(&s, &DELETE, ok, &failures) {
                     s.error.set(Some(m));
                 }
             }),
@@ -990,19 +972,12 @@ fn detail_pane(
                         .flatten()
                         .and_then(|id| st2.items.with_untracked(|v| v.iter().any(|i| i.id == id && i.kind == ItemKind::Folder)).ok())
                         .unwrap_or(false);
+                    let l = st2.lang;
+                    let key = if folder_picked { "files.folderSelected" } else { "files.selectFile" };
                     w::column(&u2)
                         .gap(unit * 2.0)
-                        .child(crate::state::label(
-                            &u2,
-                            if folder_picked { "Folder selected — double-click or press Enter to open it." } else { "Select a file to view or edit." },
-                            "",
-                        ))
-                        .child(crate::state::label(
-                            &u2,
-                            "Click selects · double-click opens · Ctrl/Shift multi-select. Drop files from other apps onto the list or \
-                             a folder to import. Drag vault items onto a folder or a part of the path to move them.",
-                            "muted",
-                        ))
+                        .child(crate::state::label(&u2, l.k(key), ""))
+                        .child(crate::state::label(&u2, l.k("files.detailHelp"), "muted"))
                 }
                 Some(d) => match d.item.kind {
                     ItemKind::Text => text_editor(&st2, &u2, d, &sel),
@@ -1022,18 +997,19 @@ fn action_row(
     rename: bool,
 ) -> El {
     let unit = ui.theme().spacing.unit;
+    let l = st.lang;
     let mut row = w::wrap(ui).gap(unit * 2.0).align(Align::Center);
     if rename {
         let (s, u, i) = (st.clone(), ui.clone(), item.clone());
-        row = row.child(w::button(ui, "Rename", move || {
+        row = row.child(w::button(ui, l.k("files.rename"), move || {
             name_dialog(&s, &u, Some(i.clone()))
         }));
     }
     let (s, i) = (st.clone(), item.clone());
-    row = row.child(w::button(ui, "Export", move || export(&s, &i)));
+    row = row.child(w::button(ui, l.k("files.export"), move || export(&s, &i)));
     let (s, u, id, sel) = (st.clone(), ui.clone(), item.id.clone(), sel.clone());
     row.child(
-        w::button(ui, "Delete", move || {
+        w::button(ui, l.k("files.delete"), move || {
             // The open item, unless several are selected: then all of them.
             let picked = sel.selected.get_untracked().unwrap_or_default();
             let ids = if picked.len() > 1 {
@@ -1049,11 +1025,14 @@ fn action_row(
 
 fn text_editor(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui_widgets_data::Selection<String>) -> El {
     let unit = ui.theme().spacing.unit;
-    let name: TextField = w::text_input(ui, "File name");
+    let l = st.lang;
+    let name: TextField = w::text_input(ui, l.t("port.fileName"));
+    l.name_field(&name, "port.fileName", false);
     name.set_value(&d.item.name);
     // Copies out of the text go to the secret clipboard (out of history, cleared after 30 s),
     // as the Copy button does.
-    let body: TextField = w::text_area(ui, "Text").copy_as_secret(COPY_KEEP);
+    let body: TextField = w::text_area(ui, l.t("port.text")).copy_as_secret(COPY_KEEP);
+    l.name_field(&body, "port.text", false);
     body.set_value(d.text.as_deref().unwrap_or_default());
     let dirty = st.dirty;
     let name = name.on_change(move || dirty.set(true));
@@ -1081,13 +1060,13 @@ fn text_editor(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui_widgets_data::Select
         })
     };
     let s1 = save.clone();
-    let save_btn = w::button(ui, "Save", move || s1()).variant("primary");
+    let save_btn = w::button(ui, l.k("files.save"), move || s1()).variant("primary");
     let sb = save_btn.clone();
     let save_btn = save_btn.bind(move || {
         let _ = sb.clone().disabled(!dirty.get());
     });
     let (s, b) = (st.clone(), body.clone());
-    let copy = w::button(ui, "Copy", move || s.app.copy_secret(b.value(), COPY_KEEP));
+    let copy = w::button(ui, l.k("files.copy"), move || s.app.copy_secret(b.value(), COPY_KEEP));
     let s2 = save.clone();
     let editor = body
         .el()
@@ -1122,7 +1101,9 @@ fn text_editor(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui_widgets_data::Select
 
 fn preview(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui_widgets_data::Selection<String>) -> El {
     let unit = ui.theme().spacing.unit;
-    let meta = format!("{} · {}", d.item.mime, size_text(d.item.size));
+    let l = st.lang;
+    let (mime, size) = (d.item.mime.clone(), d.item.size);
+    let meta = move || format!("{mime} · {}", size_text(&l.id(), size));
     let body = match &d.image {
         Some(bytes) => remedy_ui_media_image::image(
             ui,
@@ -1133,8 +1114,8 @@ fn preview(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui_widgets_data::Selection<
         .fill_width()
         .grow(1.0)
         .layout(|l| l.min_height = Length::Px(0.0)),
-        None if d.item.kind == ItemKind::Image => crate::state::label(ui, "No preview", "muted"),
-        None => crate::state::label(ui, "Binary file — export to open it with another app.", ""),
+        None if d.item.kind == ItemKind::Image => crate::state::label(ui, l.k("files.noPreview"), "muted"),
+        None => crate::state::label(ui, l.k("files.binaryHint"), ""),
     };
     w::column(ui)
         .gap(unit * 3.0)

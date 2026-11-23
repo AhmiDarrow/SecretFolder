@@ -13,6 +13,7 @@ use remedy_ui::{App, Window};
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
+use crate::lang::Lang;
 use crate::policy::UnlockThrottle;
 use crate::vault::{ItemPreview, Vault, VaultStatus};
 
@@ -35,7 +36,12 @@ pub enum Screen {
 pub struct Folder {
     pub app: App,
     vault: Option<Arc<Mutex<Vault>>>,
+    /// The vault's folder, where `ui.json` (the language) lives beside `vault.json`.
+    pub root: Option<std::path::PathBuf>,
+    /// Why the vault could not be opened (the shipped code's English; shown localized).
     pub load_error: String,
+    /// The interface language.
+    pub lang: Lang,
     pub throttle: RefCell<UnlockThrottle>,
     pub screen: Signal<Screen>,
     pub status: Signal<Option<VaultStatus>>,
@@ -85,7 +91,7 @@ impl Folder {
     /// it when no unlock is running (the gate shows "Working…" meanwhile).
     pub fn with<T>(&self, f: impl FnOnce(&mut Vault) -> AppResult<T>) -> AppResult<T> {
         let Some(v) = &self.vault else {
-            return Err(AppError::Message(self.load_error.clone()));
+            return Err(AppError::Message(self.load_error()));
         };
         let mut g = v.lock().unwrap_or_else(|e| e.into_inner());
         f(&mut g)
@@ -95,6 +101,43 @@ impl Folder {
     pub fn shared(&self) -> Option<Arc<Mutex<Vault>>> {
         self.vault.clone()
     }
+
+    /// Why the vault could not be opened, in the interface language.
+    pub fn load_error(&self) -> String {
+        let l = self.lang;
+        l.tv("port.openFailed", &[("detail", &l.err(&self.load_error))])
+    }
+
+    /// Shows an error from the shipped code (English) in the interface language.
+    pub fn fail(&self, raw: impl AsRef<str>) {
+        self.error.set(Some(self.lang.err(raw.as_ref())));
+    }
+}
+
+/// The language to start in: the one saved in `ui.json` beside the vault (0.2.0 wrote it
+/// there; read by the shipped `prefs.rs`), else `SECRETFOLDER_LOCALE`, else the system's.
+pub fn initial_locale(root: Option<&std::path::Path>) -> String {
+    root.and_then(crate::prefs::read_ui_locale)
+        .or_else(crate::prefs::env_locale)
+        .unwrap_or_else(|| crate::lang::detect(&crate::lang::system_tags()).to_owned())
+}
+
+/// Switches the interface language: written to `ui.json` by the shipped `prefs.rs` (which
+/// keeps every other key; `vault.json` is never touched), then every label, the tray and
+/// the engine's own words follow at once.
+pub fn set_language(st: &St, id: &str) {
+    if !crate::prefs::is_ui_locale(id) {
+        return;
+    }
+    if let Some(root) = &st.root
+        && let Err(e) = crate::prefs::write_ui_locale(root, id)
+    {
+        st.fail(e.to_string());
+        return;
+    }
+    st.app.set_locale(Some(id.to_owned()));
+    st.lang.0.set_if_changed(id.to_owned());
+    crate::tray::install_menu(st);
 }
 
 /// `SECRETFOLDER_VAULT` points the app at another vault folder (tests, a second vault).
@@ -109,18 +152,27 @@ pub fn start(app: &App) {
 
 /// Builds the app: state, tray, the window, second-launch and idle handling.
 pub fn start_at(app: &App, vault_root: Option<std::path::PathBuf>) -> St {
+    // Where the vault lives, even when it cannot be opened (the language is read from there).
+    let root = vault_root.clone().or_else(|| crate::vault::default_vault_root().ok());
     let opened = match vault_root {
         Some(p) => Vault::open_root(p),
         None => Vault::open_default(),
     };
-    let (vault, load_error) = match opened {
-        Ok(v) => (Some(Arc::new(Mutex::new(v))), String::new()),
-        Err(e) => (None, format!("The vault could not be opened: {e}")),
+    let (vault, load_error, root) = match opened {
+        Ok(v) => {
+            let r = v.data_root().to_path_buf();
+            (Some(Arc::new(Mutex::new(v))), String::new(), Some(r))
+        }
+        Err(e) => (None, e.to_string(), root),
     };
+    let locale = initial_locale(root.as_deref());
+    app.set_locale(Some(locale.clone()));
     let st: St = Rc::new(Folder {
         app: app.clone(),
         vault,
+        root,
         load_error,
+        lang: Lang::new(&locale),
         throttle: RefCell::new(UnlockThrottle::new()),
         screen: Signal::new(Screen::Unlock),
         status: Signal::new(None),
@@ -240,7 +292,7 @@ pub fn checked<T>(st: &St, r: AppResult<T>) -> Option<T> {
             None
         }
         Err(e) => {
-            st.error.set(Some(e.to_string()));
+            st.fail(e.to_string());
             None
         }
     }

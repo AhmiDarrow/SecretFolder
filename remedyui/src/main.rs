@@ -21,6 +21,11 @@ mod error;
 #[allow(dead_code)]
 #[rustfmt::skip]
 mod policy;
+// 0.2.0's `ui.json` beside the vault (the language), read and written by its own code.
+#[path = "../../src-tauri/src/prefs.rs"]
+#[allow(dead_code)]
+#[rustfmt::skip]
+mod prefs;
 #[path = "../../src-tauri/src/vault.rs"]
 #[allow(dead_code)]
 #[rustfmt::skip]
@@ -31,6 +36,7 @@ mod explorer;
 mod files;
 mod fonts;
 mod gate;
+mod lang;
 mod settings;
 mod state;
 mod tray;
