@@ -224,6 +224,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
+name = "ar_archive_writer"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "523e5e187fff36fcb8d1d19ccf0ca4ca43ec3d158316057f66dc6f72716bc5ec"
+dependencies = [
+ "object",
+]
+
+[[package]]
 name = "arboard"
 version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1366,6 +1375,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "fontconfig-parser"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbc773e24e02d4ddd8395fd30dc147524273a83e54e0f312d986ea30de5f5646"
+dependencies = [
+ "roxmltree 0.20.0",
+]
+
+[[package]]
+name = "fontdb"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2660c5e9157bf76d2db1294e4a9feba604ef610819a3b591088d0d8392a3290f"
+dependencies = [
+ "fontconfig-parser",
+ "log",
+ "slotmap",
+ "tinyvec",
+]
+
+[[package]]
 name = "fontique"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1380,7 +1410,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parlance",
  "read-fonts",
- "roxmltree",
+ "roxmltree 0.21.2",
  "smallvec",
  "windows",
  "windows-core",
@@ -1795,6 +1825,7 @@ dependencies = [
  "icu_decimal_data",
  "icu_locale_core",
  "icu_locale_fallback",
+ "icu_pattern",
  "icu_plurals",
  "icu_provider",
  "writeable",
@@ -1806,6 +1837,25 @@ name = "icu_decimal_data"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4c887fc7d4c297cf3f9436864af9e3dba7f8be9415a6c2a7f392f3b1636298c"
+
+[[package]]
+name = "icu_locale"
+version = "2.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "785f595c61ef57169a467eeed7b4b6936a66f6cacbb116a96ee86da983251bf4"
+dependencies = [
+ "displaydoc",
+ "either",
+ "icu_collections",
+ "icu_locale_core",
+ "icu_locale_data",
+ "icu_locale_fallback",
+ "icu_pattern",
+ "icu_provider",
+ "tinystr",
+ "writeable",
+ "zerovec",
+]
 
 [[package]]
 name = "icu_locale_core"
@@ -1820,6 +1870,12 @@ dependencies = [
  "writeable",
  "zerovec",
 ]
+
+[[package]]
+name = "icu_locale_data"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d37d91460e362a5cf58907cd7ce871411775ee6294e49a5cc8e6cec16dfa75ea"
 
 [[package]]
 name = "icu_locale_fallback"
@@ -1871,6 +1927,7 @@ dependencies = [
  "either",
  "serde",
  "writeable",
+ "yoke",
  "zerovec",
 ]
 
@@ -2939,7 +2996,7 @@ dependencies = [
  "objc2-quartz-core 0.2.2",
  "objc2-symbols",
  "objc2-uniform-type-identifiers 0.2.2",
- "objc2-user-notifications",
+ "objc2-user-notifications 0.2.2",
 ]
 
 [[package]]
@@ -2974,6 +3031,27 @@ dependencies = [
  "objc2 0.5.3",
  "objc2-core-location",
  "objc2-foundation 0.2.2",
+]
+
+[[package]]
+name = "objc2-user-notifications"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9df9128cbbfef73cda168416ccf7f837b62737d748333bfe9ab71c245d76613e"
+dependencies = [
+ "bitflags 2.13.2",
+ "block2 0.6.2",
+ "objc2 0.6.5",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "object"
+version = "0.39.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e5a6c098c7a3b6547378093f5cc30bc54fd361ce711e05293a5cc589562739b"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
@@ -3402,6 +3480,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
+name = "psm"
+version = "0.1.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4dcd034599e63b970727f70d79e02d62390a4a84f7c6b827c27c46d5ac3fa622"
+dependencies = [
+ "ar_archive_writer",
+ "cc",
+]
+
+[[package]]
 name = "pxfm"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3590,27 +3678,27 @@ dependencies = [
  "remedy-ui-core",
  "remedy-ui-devtools",
  "remedy-ui-fonts",
+ "remedy-ui-fonts-cjk",
  "remedy-ui-host",
  "remedy-ui-input",
  "remedy-ui-layout",
+ "remedy-ui-media-effects",
  "remedy-ui-media-image",
- "remedy-ui-media-svg",
  "remedy-ui-paint",
  "remedy-ui-reactive",
  "remedy-ui-render-cpu",
  "remedy-ui-render-gpu",
- "remedy-ui-secure",
  "remedy-ui-services-i18n",
  "remedy-ui-style",
  "remedy-ui-text",
  "remedy-ui-themes",
- "remedy-ui-trace",
  "remedy-ui-tree",
  "remedy-ui-view",
  "remedy-ui-widgets-core",
  "remedy-ui-widgets-data",
  "remedy-ui-widgets-forms",
  "remedy-ui-widgets-nav",
+ "zeroize",
 ]
 
 [[package]]
@@ -3667,9 +3755,11 @@ dependencies = [
 name = "remedy-ui-bridge-macos"
 version = "1.0.0-rc.1"
 dependencies = [
+ "block2 0.6.2",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
+ "objc2-user-notifications 0.3.2",
  "remedy-ui-bridge-winit",
  "remedy-ui-core",
  "remedy-ui-host",
@@ -3681,12 +3771,14 @@ dependencies = [
 name = "remedy-ui-bridge-windows"
 version = "1.0.0-rc.1"
 dependencies = [
+ "png",
  "remedy-ui-bridge-winit",
  "remedy-ui-core",
  "remedy-ui-host",
  "remedy-ui-input",
  "rfd",
  "windows",
+ "windows-collections",
  "windows-core",
  "windows-sys 0.61.2",
 ]
@@ -3711,7 +3803,6 @@ dependencies = [
  "remedy-ui-input",
  "remedy-ui-motion",
  "remedy-ui-paint",
- "remedy-ui-trace",
 ]
 
 [[package]]
@@ -3719,6 +3810,7 @@ name = "remedy-ui-core"
 version = "1.0.0-rc.1"
 dependencies = [
  "cpu-time",
+ "tracing",
  "web-time",
 ]
 
@@ -3731,6 +3823,7 @@ dependencies = [
  "remedy-ui-compositor",
  "remedy-ui-core",
  "remedy-ui-fonts",
+ "remedy-ui-fonts-cjk",
  "remedy-ui-input",
  "remedy-ui-layout",
  "remedy-ui-macros",
@@ -3740,7 +3833,6 @@ dependencies = [
  "remedy-ui-style",
  "remedy-ui-text",
  "remedy-ui-themes",
- "remedy-ui-trace",
  "remedy-ui-view",
  "remedy-ui-widgets-core",
  "remedy-ui-widgets-forms",
@@ -3749,8 +3841,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "remedy-ui-effects"
+version = "1.0.0-rc.1"
+dependencies = [
+ "remedy-ui-core",
+ "remedy-ui-paint",
+]
+
+[[package]]
 name = "remedy-ui-fonts"
 version = "1.0.0-rc.1"
+
+[[package]]
+name = "remedy-ui-fonts-cjk"
+version = "1.0.0-rc.1"
+dependencies = [
+ "remedy-ui-fonts",
+]
 
 [[package]]
 name = "remedy-ui-host"
@@ -3774,6 +3881,7 @@ name = "remedy-ui-layout"
 version = "1.0.0-rc.1"
 dependencies = [
  "remedy-ui-core",
+ "stacker",
  "taffy",
 ]
 
@@ -3788,30 +3896,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "remedy-ui-media-effects"
+version = "1.0.0-rc.1"
+dependencies = [
+ "remedy-ui-core",
+ "remedy-ui-effects",
+ "remedy-ui-paint",
+ "remedy-ui-render-gpu",
+ "remedy-ui-view",
+]
+
+[[package]]
 name = "remedy-ui-media-image"
 version = "1.0.0-rc.1"
 dependencies = [
  "image",
+ "js-sys",
  "moxcms",
  "remedy-ui-a11y",
  "remedy-ui-core",
  "remedy-ui-layout",
  "remedy-ui-paint",
  "remedy-ui-reactive",
- "remedy-ui-trace",
- "remedy-ui-view",
-]
-
-[[package]]
-name = "remedy-ui-media-svg"
-version = "1.0.0-rc.1"
-dependencies = [
- "remedy-ui-a11y",
- "remedy-ui-core",
- "remedy-ui-media-image",
- "remedy-ui-paint",
+ "remedy-ui-services-net",
  "remedy-ui-view",
  "resvg",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -3834,9 +3946,11 @@ name = "remedy-ui-reactive"
 version = "1.0.0-rc.1"
 dependencies = [
  "remedy-ui-core",
- "remedy-ui-trace",
  "serde",
  "serde_json",
+ "stacker",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -3847,30 +3961,29 @@ dependencies = [
  "remedy-ui-core",
  "remedy-ui-paint",
  "remedy-ui-text",
- "remedy-ui-trace",
- "vello_cpu",
+ "remedy-vello-cpu",
 ]
 
 [[package]]
 name = "remedy-ui-render-gpu"
 version = "1.0.0-rc.1"
 dependencies = [
+ "ash",
+ "glow",
+ "js-sys",
+ "raw-window-handle",
  "remedy-ui-compositor",
  "remedy-ui-core",
+ "remedy-ui-effects",
  "remedy-ui-host",
  "remedy-ui-paint",
  "remedy-ui-render-cpu",
- "remedy-ui-trace",
  "vello_gpu",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-sys",
  "wgpu",
-]
-
-[[package]]
-name = "remedy-ui-secure"
-version = "1.0.0-rc.1"
-dependencies = [
- "zeroize",
+ "windows",
 ]
 
 [[package]]
@@ -3883,13 +3996,32 @@ dependencies = [
  "icu_calendar",
  "icu_datetime",
  "icu_decimal",
+ "icu_locale",
  "icu_locale_core",
  "intl-memoizer",
+ "js-sys",
  "remedy-ui-core",
  "remedy-ui-reactive",
  "remedy-ui-view",
  "serde_json",
  "unic-langid",
+ "wasm-bindgen",
+ "writeable",
+]
+
+[[package]]
+name = "remedy-ui-services-net"
+version = "1.0.0-rc.1"
+dependencies = [
+ "js-sys",
+ "remedy-ui-reactive",
+ "rustls",
+ "serde",
+ "serde_json",
+ "ureq",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]
@@ -3899,6 +4031,7 @@ dependencies = [
  "base64 0.23.1",
  "minisign-verify",
  "remedy-ui-reactive",
+ "remedy-ui-services-net",
  "remedy-ui-view",
  "remedy-ui-widgets-core",
  "rustls",
@@ -3921,8 +4054,12 @@ name = "remedy-ui-text"
 version = "1.0.0-rc.1"
 dependencies = [
  "fontique",
+ "icu_normalizer",
+ "icu_properties",
  "icu_segmenter",
  "parley",
+ "parley_data",
+ "parley_engine",
  "remedy-ui-core",
  "ropey",
  "skrifa",
@@ -3941,14 +4078,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "remedy-ui-trace"
-version = "1.0.0-rc.1"
-dependencies = [
- "tracing",
- "web-time",
-]
-
-[[package]]
 name = "remedy-ui-tree"
 version = "1.0.0-rc.1"
 dependencies = [
@@ -3960,6 +4089,10 @@ dependencies = [
 name = "remedy-ui-view"
 version = "1.0.0-rc.1"
 dependencies = [
+ "fluent-bundle",
+ "fluent-syntax",
+ "intl-memoizer",
+ "intl_pluralrules",
  "remedy-ui-a11y",
  "remedy-ui-compositor",
  "remedy-ui-core",
@@ -3969,10 +4102,12 @@ dependencies = [
  "remedy-ui-motion",
  "remedy-ui-paint",
  "remedy-ui-reactive",
+ "remedy-ui-render-cpu",
  "remedy-ui-style",
  "remedy-ui-text",
- "remedy-ui-trace",
  "remedy-ui-tree",
+ "stacker",
+ "unic-langid",
 ]
 
 [[package]]
@@ -4034,6 +4169,18 @@ dependencies = [
  "remedy-ui-view",
  "remedy-ui-widgets-core",
  "serde_json",
+]
+
+[[package]]
+name = "remedy-vello-cpu"
+version = "0.4.0"
+dependencies = [
+ "bytemuck",
+ "fearless_simd",
+ "fearless_simd_macros",
+ "glifo",
+ "hashbrown 0.17.1",
+ "vello_common",
 ]
 
 [[package]]
@@ -4116,6 +4263,12 @@ dependencies = [
  "smallvec",
  "str_indices",
 ]
+
+[[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "roxmltree"
@@ -4604,6 +4757,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "stacker"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "707f49d46706bacf8a2b00d51dace3f9de527c13eec3778f570c411f89e69967"
+dependencies = [
+ "cc",
+ "cfg-if",
+ "libc",
+ "psm",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4955,6 +5121,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "357cc3acc6a036009fd6c973ed009037c732d60d0b4f6c673e9041497482a28f"
 
 [[package]]
+name = "unicode-bidi"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4990,6 +5162,12 @@ name = "unicode-segmentation"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
+
+[[package]]
+name = "unicode-vo"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1d386ff53b415b7fe27b50bb44679e2cc4660272694b7b6f3326d8480823a94"
 
 [[package]]
 name = "unicode-width"
@@ -5053,18 +5231,26 @@ version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bdb896f04730b97805bbc3191fc57e4bf03face0f14577dd42e783c4d8c98802"
 dependencies = [
+ "base64 0.23.1",
  "data-url",
  "flate2",
+ "fontdb",
+ "harfrust",
  "imagesize",
  "kurbo",
  "log",
  "pico-args",
- "roxmltree",
+ "roxmltree 0.21.2",
  "simplecss",
  "siphasher",
+ "skrifa",
  "strict-num",
  "svgtypes",
  "tiny-skia-path",
+ "unicode-bidi",
+ "unicode-script",
+ "unicode-vo",
+ "xmlwriter",
 ]
 
 [[package]]
@@ -5114,20 +5300,6 @@ dependencies = [
  "peniko",
  "smallvec",
  "thiserror 2.0.19",
-]
-
-[[package]]
-name = "vello_cpu"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d6b3db720c5d3aa8783cb1c042d8a77142df70bd0f742dc9005f6d6efe33ebf"
-dependencies = [
- "bytemuck",
- "fearless_simd",
- "fearless_simd_macros",
- "glifo",
- "hashbrown 0.17.1",
- "vello_common",
 ]
 
 [[package]]
@@ -6093,6 +6265,12 @@ name = "xml-rs"
 version = "0.8.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
+
+[[package]]
+name = "xmlwriter"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "yeslogic-fontconfig-sys"

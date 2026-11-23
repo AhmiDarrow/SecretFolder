@@ -21,19 +21,15 @@ pub fn icon() -> Option<TrayImage> {
 /// Shows the tray icon and wires its menu.
 pub fn install(st: &St) {
     let Some(image) = icon() else { return };
-    let item = |id, label: &str| TrayItem::Item {
-        id,
-        label: label.to_owned(),
-        enabled: true,
-    };
+    // Plain entries, none in bold: the shipped tray had no default item.
     st.app.set_tray(Some(TrayIcon::new(
         "SecretFolder",
         image,
         vec![
-            item(SHOW, "Show SecretFolder"),
-            item(LOCK, "Lock vault"),
+            TrayItem::item(SHOW, "Show SecretFolder"),
+            TrayItem::item(LOCK, "Lock vault"),
             TrayItem::Separator,
-            item(QUIT, "Quit SecretFolder"),
+            TrayItem::item(QUIT, "Quit SecretFolder"),
         ],
     )));
     let st = st.clone();
