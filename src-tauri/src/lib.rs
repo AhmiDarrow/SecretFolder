@@ -2,6 +2,7 @@ mod commands;
 mod crypto;
 mod error;
 mod policy;
+mod prefs;
 mod vault;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,18 +25,35 @@ pub(crate) fn request_exit() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let ci = prefs::ci_enabled();
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_dialog::init());
+    // A hidden smoke process must not steal the installed app's single-instance lock.
+    if !ci {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main(app);
-        }))
-        .setup(|app| {
+        }));
+    }
+
+    let app = builder
+        .setup(move |app| {
             let state = AppState::new().map_err(|e| std::io::Error::other(e.to_string()))?;
             app.manage(state);
 
-            build_tray(app.handle())?;
+            if ci {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                    let _ = window.set_skip_taskbar(true);
+                }
+            } else {
+                let (show, lock, quit) = startup_tray_labels(app.handle());
+                install_tray(app.handle(), show, lock, quit)?;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                }
+            }
 
             // Idle-lock poller — locks vault and notifies UI.
             let handle = app.handle().clone();
@@ -79,6 +97,10 @@ pub fn run() {
             commands::hide_main_window,
             commands::quit_app,
             commands::open_external_url,
+            commands::boot_info,
+            commands::set_ui_locale,
+            commands::set_tray_labels,
+            commands::ci_report,
         ])
         .on_window_event(|window, event| {
             if window.label() != "main" {
@@ -105,13 +127,38 @@ pub fn run() {
     });
 }
 
-fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
-    let lock_i = MenuItem::with_id(app, "lock", "Lock", true, None::<&str>)?;
-    let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+fn startup_tray_labels(app: &AppHandle) -> (&'static str, &'static str, &'static str) {
+    let saved = app.try_state::<AppState>().and_then(|state| {
+        state
+            .vault
+            .lock()
+            .ok()
+            .and_then(|vault| prefs::read_ui_locale(vault.data_root()))
+    });
+    let locale = saved.or_else(prefs::env_locale);
+    prefs::tray_labels(locale.as_deref().unwrap_or("en"))
+}
+
+pub(crate) fn install_tray(
+    app: &AppHandle,
+    show: &str,
+    lock: &str,
+    quit: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let show_l = prefs::clamp_tray_label(show, "Show");
+    let lock_l = prefs::clamp_tray_label(lock, "Lock");
+    let quit_l = prefs::clamp_tray_label(quit, "Quit");
+    let show_i = MenuItem::with_id(app, "show", show_l, true, None::<&str>)?;
+    let lock_i = MenuItem::with_id(app, "lock", lock_l, true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app, "quit", quit_l, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show_i, &lock_i, &quit_i])?;
 
-    let _tray = TrayIconBuilder::new()
+    if let Some(tray) = app.tray_by_id("main") {
+        tray.set_menu(Some(menu))?;
+        return Ok(());
+    }
+
+    let _tray = TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .tooltip("SecretFolder")
@@ -156,6 +203,9 @@ fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn show_main(app: &AppHandle) {
+    if prefs::ci_enabled() {
+        return;
+    }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
