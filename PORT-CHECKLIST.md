@@ -12,7 +12,7 @@ screenshots in `port-evidence/` (`before/` is the shipped UI, `after/` is Remedy
 - [x] Same vault, same place: `%APPDATA%\com.ahmi.secretfolder\` (`vault.json` plus `blobs/`), opened by the shipped `Vault::open_default`.
 - [x] Same format. The vault code is the shipped `src-tauri/src/vault.rs`, so there is no migration.
 - [x] `SECRETFOLDER_VAULT` selects another vault folder. It gets its own single-instance lock.
-- [x] Vaults written by 0.1.0 and 0.1.7 open, can be edited (text, rename, import, idle lock, password), and read back through the shipped code by the new password and by the old recovery key. Untouched files stay byte-identical (`shipped_vaults_open_edit_and_reopen_without_loss`; fixtures from `compat/shipped.sh`, which runs the release tags' own vault code).
+- [x] Vaults written by 0.1.0, 0.1.1, 0.1.5, 0.1.7 and 0.2.0 (every release whose vault code changed) open, can be edited (text, rename, import, idle lock, password), and read back through the shipped code by the new password and by the old recovery key. Untouched files stay byte-identical (`shipped_vaults_open_edit_and_reopen_without_loss`; made-up test vaults from `compat/shipped.sh` and `compat/fixture.sh`, which run the release tags' own vault code).
 - [x] The release tags' own code also reads the vaults after the RemedyUI build has edited them (cross-check with `SECRETFOLDER_COMPAT_OUT` and `compat/shipped.sh <tag> dump`).
 - [x] `.bak` restore and corrupt-file handling come from the shipped `open_root`, unchanged.
 
