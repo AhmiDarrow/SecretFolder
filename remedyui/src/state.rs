@@ -341,5 +341,5 @@ pub fn quit(st: &St) {
 
 /// Text in a variant of the label style ("" for the plain one).
 pub fn label(ui: &remedy_ui::Ui, s: impl remedy_ui::view::IntoProp<String>, variant: &'static str) -> remedy_ui::El {
-    remedy_ui_widgets_core::text(ui, s).variant(variant)
+    remedy_ui::widgets::text(ui, s).variant(variant)
 }

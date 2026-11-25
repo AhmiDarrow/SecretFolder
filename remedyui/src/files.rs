@@ -15,9 +15,9 @@ use remedy_ui::layout::{Axis, Length};
 use remedy_ui::reactive::{Effect, Signal, untrack};
 use remedy_ui::view::{Align, Drag, DragData, DropEffect};
 use remedy_ui::{El, TextField, Ui};
-use remedy_ui_media_image::{Fit, Source};
-use remedy_ui_widgets_core::{self as w, DialogButton};
-use remedy_ui_widgets_data::{Column, SortValue, TableState, table};
+use remedy_ui::image::{Fit, Source};
+use remedy_ui::widgets::{self as w, DialogButton};
+use remedy_ui::data::{Column, SortValue, TableState, table};
 
 use crate::error::AppError;
 use crate::state::{self, St, checked};
@@ -527,8 +527,8 @@ fn selection_bar(
         });
     })
     .semantics(
-        remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Status)
-            .live(remedy_ui_a11y::Live::Polite),
+        remedy_ui::a11y::Semantics::new(remedy_ui::a11y::Role::Status)
+            .live(remedy_ui::a11y::Live::Polite),
     )
 }
 
@@ -541,7 +541,7 @@ fn crumbs(st: &St, ui: &Ui, tstate: &TableState<String>) -> El {
         .align(Align::Center)
         .fill_width()
         .semantics(
-            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Group).label(st.lang.t("files.pathLabel")),
+            remedy_ui::a11y::Semantics::new(remedy_ui::a11y::Role::Group).label(st.lang.t("files.pathLabel")),
         );
     let (b2, st2, u2, _sel) = (
         bar.clone(),
@@ -606,7 +606,7 @@ fn crumbs(st: &St, ui: &Ui, tstate: &TableState<String>) -> El {
 }
 
 /// The open and remove buttons at the end of a row (the shipped list's row actions).
-fn row_actions(st: &St, ui: &Ui, i: &ItemPreview, sel: &remedy_ui_widgets_data::Selection<String>) -> El {
+fn row_actions(st: &St, ui: &Ui, i: &ItemPreview, sel: &remedy_ui::data::Selection<String>) -> El {
     let unit = ui.theme().spacing.unit;
     // Small buttons that fit a table row.
     let small = remedy_ui::style::StylePatch::new()
@@ -625,9 +625,9 @@ fn row_actions(st: &St, ui: &Ui, i: &ItemPreview, sel: &remedy_ui_widgets_data::
             .style(small.clone())
             .height(24.0)
             .semantics(
-                remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Button)
+                remedy_ui::a11y::Semantics::new(remedy_ui::a11y::Role::Button)
                     .label(l.tv("files.openFolderTitle", &[("name", &i.name)]))
-                    .action(remedy_ui_a11y::Action::Click),
+                    .action(remedy_ui::a11y::Action::Click),
             ),
         );
     }
@@ -643,9 +643,9 @@ fn row_actions(st: &St, ui: &Ui, i: &ItemPreview, sel: &remedy_ui_widgets_data::
             .style(small)
             .height(24.0)
             .semantics(
-                remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Button)
+                remedy_ui::a11y::Semantics::new(remedy_ui::a11y::Role::Button)
                     .label(label)
-                    .action(remedy_ui_a11y::Action::Click),
+                    .action(remedy_ui::a11y::Action::Click),
             ),
     )
 }
@@ -695,9 +695,9 @@ fn parent_row_built(st: &St, ui: &Ui) -> El {
             move |d, _, _| take_drop(&sd, d, parent().map(|(id, _)| id)),
         )
         .semantics(move || {
-            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Button)
+            remedy_ui::a11y::Semantics::new(remedy_ui::a11y::Role::Button)
                 .label(crate::lang::tr(&l.id(), "port.parentFolder"))
-                .action(remedy_ui_a11y::Action::Click)
+                .action(remedy_ui::a11y::Action::Click)
         });
     w::tooltip(&row, l.k("files.parentTitle"));
     row
@@ -707,7 +707,7 @@ fn here_of(st: &St) -> Option<String> {
     st.folder.get_untracked().ok().flatten()
 }
 
-fn new_text(st: &St, sel: &remedy_ui_widgets_data::Selection<String>) {
+fn new_text(st: &St, sel: &remedy_ui::data::Selection<String>) {
     let folder = here_of(st);
     let name = st.lang.t("files.defaultTextName");
     if let Some(item) = checked(st, st.with(|v| v.create_text(&name, "", folder))) {
@@ -838,7 +838,7 @@ fn delete_dialog(
     st: &St,
     ui: &Ui,
     ids: Vec<String>,
-    sel: &remedy_ui_widgets_data::Selection<String>,
+    sel: &remedy_ui::data::Selection<String>,
 ) {
     let items: Vec<ItemPreview> = st
         .items
@@ -993,7 +993,7 @@ fn action_row(
     st: &St,
     ui: &Ui,
     item: &ItemPreview,
-    sel: &remedy_ui_widgets_data::Selection<String>,
+    sel: &remedy_ui::data::Selection<String>,
     rename: bool,
 ) -> El {
     let unit = ui.theme().spacing.unit;
@@ -1023,7 +1023,7 @@ fn action_row(
     )
 }
 
-fn text_editor(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui_widgets_data::Selection<String>) -> El {
+fn text_editor(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui::data::Selection<String>) -> El {
     let unit = ui.theme().spacing.unit;
     let l = st.lang;
     let name: TextField = w::text_input(ui, l.t("port.fileName"));
@@ -1099,13 +1099,13 @@ fn text_editor(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui_widgets_data::Select
         .child(editor)
 }
 
-fn preview(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui_widgets_data::Selection<String>) -> El {
+fn preview(st: &St, ui: &Ui, d: Detail, sel: &remedy_ui::data::Selection<String>) -> El {
     let unit = ui.theme().spacing.unit;
     let l = st.lang;
     let (mime, size) = (d.item.mime.clone(), d.item.size);
     let meta = move || format!("{mime} · {}", size_text(&l.id(), size));
     let body = match &d.image {
-        Some(bytes) => remedy_ui_media_image::image(
+        Some(bytes) => remedy_ui::image::image(
             ui,
             Source::Bytes(bytes.clone()),
             d.item.name.clone(),

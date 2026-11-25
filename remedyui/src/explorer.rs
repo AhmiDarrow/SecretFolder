@@ -7,9 +7,9 @@ use remedy_ui::core::Insets;
 use remedy_ui::reactive::{Signal, untrack};
 use remedy_ui::view::{Align, Justify};
 use remedy_ui::{El, Ui, Window, WindowSpec};
-use remedy_ui_media_image::{Fit, Source};
-use remedy_ui_widgets_core as w;
-use remedy_ui_widgets_nav::{self as nav, Tab};
+use remedy_ui::image::{Fit, Source};
+use remedy_ui::widgets as w;
+use remedy_ui::nav::{self as nav, Tab};
 
 use crate::state::{self, Screen, St};
 
@@ -21,7 +21,7 @@ const WINDOW_ICON: &[u8] = include_bytes!("../../src-tauri/icons/128x128@2x.png"
 
 /// The shipped app's icon for the window (taskbar, Alt+Tab, the title bar).
 pub fn window_icon() -> Option<remedy_ui::host::WindowIcon> {
-    let d = remedy_ui_media_image::decode(WINDOW_ICON, None).ok()?;
+    let d = remedy_ui::image::decode(WINDOW_ICON, None).ok()?;
     let img = d.image;
     if img.width != img.height {
         return None;
@@ -87,7 +87,7 @@ fn brand(st: &St, ui: &Ui) -> El {
         .gap(unit * 2.0)
         .align(Align::Center)
         .child(
-            remedy_ui_media_image::image(ui, Source::Bytes(Arc::from(MARK)), "", Fit::Contain)
+            remedy_ui::image::image(ui, Source::Bytes(Arc::from(MARK)), "", Fit::Contain)
                 .width(28.0)
                 .height(28.0),
         )
@@ -191,5 +191,5 @@ fn banner_bar(e: Signal<Option<String>>, l: crate::lang::Lang, ui: &Ui) -> El {
             }
             false
         });
-    bar.semantics(move || remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Alert).label(e.get().unwrap_or_default()))
+    bar.semantics(move || remedy_ui::a11y::Semantics::new(remedy_ui::a11y::Role::Alert).label(e.get().unwrap_or_default()))
 }

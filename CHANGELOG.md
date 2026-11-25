@@ -5,6 +5,12 @@ All notable changes to SecretFolder are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-11-25
+
+### Changed
+
+- Built on the current RemedyUI engine. Your vault, master password, recovery key and settings are unchanged.
+
 ## [1.0.0] — 2026-11-23
 
 SecretFolder 1.0 has a new interface built on RemedyUI, and runs on Linux as well as Windows. Your vault, master password, recovery key and language are the same.

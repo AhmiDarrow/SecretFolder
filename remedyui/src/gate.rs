@@ -10,7 +10,7 @@ use remedy_ui::reactive::{Signal, untrack};
 use remedy_ui::style::StylePatch;
 use remedy_ui::view::{Align, Justify};
 use remedy_ui::{El, TextField, Ui};
-use remedy_ui_widgets_core as w;
+use remedy_ui::widgets as w;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
@@ -28,7 +28,7 @@ pub fn error_line(st: &St, ui: &Ui) -> El {
     let u = ui.clone();
     remedy_ui::show(ui, move || e.with(Option::is_some), move || {
         w::text(&u, "").variant("error").text(move || e.get().unwrap_or_default()).semantics(move || {
-            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Alert).label(e.get().unwrap_or_default())
+            remedy_ui::a11y::Semantics::new(remedy_ui::a11y::Role::Alert).label(e.get().unwrap_or_default())
         })
     })
     .el()
@@ -265,7 +265,7 @@ pub fn recovery_key(st: &St, ui: &Ui) -> El {
         .data_text()
         .style(StylePatch::new().mono(true))
         .semantics(move || {
-            remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Status).label(crate::lang::tr(&l.id(), "unlock.recoveryKey"))
+            remedy_ui::a11y::Semantics::new(remedy_ui::a11y::Role::Status).label(crate::lang::tr(&l.id(), "unlock.recoveryKey"))
         });
     let copied = Rc::new(Cell::new(0u64));
     // Whether "Copied" shows (for two seconds after a copy).
@@ -355,13 +355,13 @@ pub fn broken(st: &St, ui: &Ui) -> El {
 
 /// The app mark at the top of a gate card (decorative: the heading names the screen).
 fn mark(ui: &Ui) -> El {
-    remedy_ui_media_image::image(
+    remedy_ui::image::image(
         ui,
-        remedy_ui_media_image::Source::Bytes(std::sync::Arc::from(crate::explorer::MARK)),
+        remedy_ui::image::Source::Bytes(std::sync::Arc::from(crate::explorer::MARK)),
         "",
-        remedy_ui_media_image::Fit::Contain,
+        remedy_ui::image::Fit::Contain,
     )
     .width(44.0)
     .height(44.0)
-    .semantics(remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Image).hidden(true))
+    .semantics(remedy_ui::a11y::Semantics::new(remedy_ui::a11y::Role::Image).hidden(true))
 }
