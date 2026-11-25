@@ -16,7 +16,7 @@ use remedy_ui::input::{
     Buttons, Key, KeyEvent, Modifiers, PointerEvent, PointerKind, PointerPhase,
 };
 use remedy_ui::{App, AppConfig, El, GeometryStore, Runner};
-use remedy_ui_bridge_headless::HeadlessHost;
+use remedy_ui::headless::HeadlessHost;
 
 use crate::state::{Screen, St};
 use crate::vault::ItemKind;
@@ -44,7 +44,7 @@ impl Driver {
         let slot: Rc<RefCell<Option<St>>> = Rc::default();
         let s2 = slot.clone();
         let config = crate::fonts::with_inter(
-            AppConfig::new("SecretFolder test").cpu_only().theme(crate::state::theme(), remedy_ui_themes::sheet),
+            AppConfig::new("SecretFolder test").cpu_only().theme(crate::state::theme(), remedy_ui::themes::sheet),
         );
         let mut runner = Runner::with_geometry(config, GeometryStore::in_memory(), move |app: &App| {
             *s2.borrow_mut() = Some(crate::state::start_at(app, crate::state::vault_override()));
@@ -68,7 +68,7 @@ impl Driver {
         let slot: Rc<RefCell<Option<St>>> = Rc::default();
         let s2 = slot.clone();
         let config = crate::fonts::with_inter(
-            AppConfig::new("SecretFolder test").cpu_only().theme(crate::state::theme(), remedy_ui_themes::sheet),
+            AppConfig::new("SecretFolder test").cpu_only().theme(crate::state::theme(), remedy_ui::themes::sheet),
         );
         let mut runner =
             Runner::with_geometry(config, GeometryStore::in_memory(), move |app: &App| {
@@ -240,7 +240,7 @@ impl Driver {
             .collect();
         assert!(nameless.is_empty(), "unnamed controls: {nameless:?}");
         let ui = self.ui();
-        let found: Vec<String> = remedy_ui_devtools::audit(&ui)
+        let found: Vec<String> = remedy_ui::devtools::audit(&ui)
             .iter()
             .map(|p| {
                 format!(
@@ -248,7 +248,7 @@ impl Driver {
                     p.message(),
                     ui.element(p.element)
                         .info()
-                        .map(|i| remedy_ui_devtools::describe(&i))
+                        .map(|i| remedy_ui::devtools::describe(&i))
                         .unwrap_or_default()
                 )
             })
@@ -945,7 +945,7 @@ fn shots() {
     d.click("I saved this recovery key somewhere safe");
     d.click("Continue to vault");
     d.until("the explorer", |d| d.screen() == Screen::Unlocked);
-    d.until("the mark", |_| remedy_ui_media_image::cached() > 0);
+    d.until("the mark", |_| remedy_ui::image::cached() > 0);
     d.frames(3);
     shoot(&mut d, "04-files-empty", None);
     let png = include_bytes!("../tests/fixtures/sample.png");
@@ -976,7 +976,7 @@ fn shots() {
     let c = centre(&d.row("photo.png"));
     d.pointer(c, PointerPhase::Down, true);
     d.pointer(c, PointerPhase::Up, false);
-    d.until("the preview", |_| remedy_ui_media_image::cached() > 1);
+    d.until("the preview", |_| remedy_ui::image::cached() > 1);
     d.frames(3);
     shoot(&mut d, "07-image-open", None);
     d.click("Open folder Taxes 2026");

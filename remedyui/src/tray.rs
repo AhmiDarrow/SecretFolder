@@ -12,7 +12,7 @@ const QUIT: u32 = 9;
 /// The mark at tray size, decoded from the icon the Tauri app ships.
 pub fn icon() -> Option<TrayImage> {
     const PNG: &[u8] = include_bytes!("../../src-tauri/icons/32x32.png");
-    let d = remedy_ui_media_image::decode(PNG, None).ok()?;
+    let d = remedy_ui::image::decode(PNG, None).ok()?;
     (d.image.width == d.image.height).then(|| TrayImage {
         size: d.image.width,
         rgba: d.image.pixels.to_vec(),

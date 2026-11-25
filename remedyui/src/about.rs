@@ -12,9 +12,9 @@ use remedy_ui::core::Insets;
 use remedy_ui::reactive::{Signal, untrack};
 use remedy_ui::view::Align;
 use remedy_ui::{El, Ui};
-use remedy_ui_media_image::{Fit, Source};
-use remedy_ui_services_update::{self as up, Apply, BannerText, Feed, Release, UpdateConfig, UpdateState};
-use remedy_ui_widgets_core as w;
+use remedy_ui::image::{Fit, Source};
+use remedy_ui::update::{self as up, Apply, BannerText, Feed, Release, UpdateConfig, UpdateState};
+use remedy_ui::widgets as w;
 
 use crate::lang::{Lang, tr};
 use crate::state::{self, St};
@@ -216,7 +216,7 @@ pub fn about(st: &St, ui: &Ui) -> El {
                     .gap(unit * 3.0)
                     .align(Align::Center)
                     .child(
-                        remedy_ui_media_image::image(ui, Source::Bytes(Arc::from(crate::explorer::MARK)), "", Fit::Contain)
+                        remedy_ui::image::image(ui, Source::Bytes(Arc::from(crate::explorer::MARK)), "", Fit::Contain)
                             .width(36.0)
                             .height(36.0),
                     )

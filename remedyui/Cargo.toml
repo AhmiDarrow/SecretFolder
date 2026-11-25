@@ -1,6 +1,6 @@
 [package]
 name = "secretfolder"
-version = "1.0.0"
+version = "1.0.1"
 description = "Encrypted folder vault, on RemedyUI"
 edition = "2024"
 rust-version = "1.96"
@@ -16,15 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 # RemedyUI (sibling checkout).
-remedy-ui = { path = "../../Projects/RemedyUI/crates/remedy-ui", features = ["data", "image", "svg"] }
-remedy-ui-widgets-core = { path = "../../Projects/RemedyUI/crates/remedy-ui-widgets-core" }
-remedy-ui-widgets-nav = { path = "../../Projects/RemedyUI/crates/remedy-ui-widgets-nav" }
-remedy-ui-widgets-data = { path = "../../Projects/RemedyUI/crates/remedy-ui-widgets-data" }
-remedy-ui-widgets-forms = { path = "../../Projects/RemedyUI/crates/remedy-ui-widgets-forms" }
-remedy-ui-media-image = { path = "../../Projects/RemedyUI/crates/remedy-ui-media-image" }
-remedy-ui-themes = { path = "../../Projects/RemedyUI/crates/remedy-ui-themes" }
-remedy-ui-services-update = { path = "../../Projects/RemedyUI/crates/remedy-ui-services-update" }
-remedy-ui-a11y = { path = "../../Projects/RemedyUI/crates/remedy-ui-a11y" }
+remedy-ui = { path = "../../Projects/RemedyUI/crates/remedy-ui", features = ["data", "image", "svg", "update"] }
 # The vault, shared with the Tauri app (same versions as its lockfile).
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
@@ -41,10 +33,9 @@ hex = "=0.4.3"
 mime_guess = "=2.0.5"
 
 [dev-dependencies]
+remedy-ui = { path = "../../Projects/RemedyUI/crates/remedy-ui", features = ["data", "image", "svg", "update", "devtools", "headless"] }
 tempfile = "=3.27.0"
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
-remedy-ui-bridge-headless = { path = "../../Projects/RemedyUI/crates/remedy-ui-bridge-headless" }
-remedy-ui-devtools = { path = "../../Projects/RemedyUI/crates/remedy-ui-devtools" }
 
 # Argon2 (64 MiB, 3 passes) is slow unoptimized; tests unlock vaults.
 [profile.dev.package.argon2]

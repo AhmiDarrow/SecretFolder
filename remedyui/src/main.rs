@@ -52,7 +52,7 @@ fn main() {
         "SecretFolder"
     };
     let config = fonts::with_inter(
-        remedy_ui::AppConfig::new(name).single_instance().theme(state::theme(), remedy_ui_themes::sheet),
+        remedy_ui::AppConfig::new(name).single_instance().theme(state::theme(), remedy_ui::themes::sheet),
     );
     if let Err(e) = remedy_ui::run(config, |app| {
         state::start(app);
