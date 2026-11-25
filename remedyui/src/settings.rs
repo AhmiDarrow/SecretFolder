@@ -4,8 +4,8 @@
 use remedy_ui::core::Insets;
 use remedy_ui::reactive::{Effect, Signal};
 use remedy_ui::{El, Ui};
-use remedy_ui_widgets_core as w;
-use remedy_ui_widgets_forms::{Decimal, NumberOptions, number_input};
+use remedy_ui::widgets as w;
+use remedy_ui::forms::{Decimal, NumberOptions, number_input};
 
 use crate::lang::tr;
 use crate::state::{self, St, checked};
@@ -47,7 +47,7 @@ fn section(ui: &Ui, l: crate::lang::Lang, key: &'static str) -> El {
     let s2 = s.clone();
     let _ = s.clone().bind(move || {
         let title = tr(&l.id(), key);
-        let _ = s2.clone().semantics(remedy_ui_a11y::Semantics::new(remedy_ui_a11y::Role::Group).label(title.clone()));
+        let _ = s2.clone().semantics(remedy_ui::a11y::Semantics::new(remedy_ui::a11y::Role::Group).label(title.clone()));
         if let Some(h) = s2.child_elements().into_iter().next() {
             let _ = h.text(title);
         }
